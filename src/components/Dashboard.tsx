@@ -1,226 +1,372 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { Goal, Transaction, Note } from "@/db/schema";
-import type { AppSection } from "./AppShell";
+import { useCallback, useEffect, useState } from "react";
+import {
+  ArrowRight,
+  CalendarDays,
+  NotebookPen,
+  Plus,
+  Sparkles,
+  Target,
+  TrendingDown,
+  TrendingUp,
+  Wallet,
+  Zap,
+} from "lucide-react";
+import { Btn, CountUp, EmptyState, Loader, NeonPanel, ProgressBar, cx } from "./ui";
+import {
+  api,
+  daysLeft,
+  fmtDateShort,
+  fmtMoney,
+  fmtMoneySigned,
+  jpatch,
+  plural,
+} from "@/lib/core";
+import type { DashboardData, Goal, SectionId } from "@/lib/core";
 
-interface DashboardProps {
-  goals: Goal[];
-  transactions: Transaction[];
-  notes: Note[];
-  onNavigate: (section: AppSection) => void;
-}
-
-interface DashboardData {
-  goals: { total: number; completed: number; todayTotal: number; todayCompleted: number };
-  finance: { totalIncome: string; totalExpense: string; monthIncome: string; monthExpense: string };
-  notes: { total: number };
-}
-
-const MONTHS = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
-const WEEKDAYS = ["Воскресенье","Понедельник","Вторник","Среда","Четверг","Пятница","Суббота"];
-
-export function Dashboard({ goals, transactions, notes, onNavigate }: DashboardProps) {
+export default function Dashboard({
+  go,
+  notify,
+}: {
+  go: (s: SectionId, intent?: string) => void;
+  notify: (msg: string) => void;
+}) {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [err, setErr] = useState("");
+  const [chartReady, setChartReady] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setErr("");
+      setData(await api<DashboardData>("/api/dashboard"));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Ошибка загрузки");
+    }
+  }, []);
 
   useEffect(() => {
-    fetch("/api/dashboard")
-      .then((r) => r.json())
-      .then(setData)
-      .catch(() => {});
-  }, [goals.length, transactions.length, notes.length]);
+    load();
+  }, [load]);
 
-  const now = new Date();
-  const todayStr = `${WEEKDAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]}`;
+  useEffect(() => {
+    if (!data) return;
+    const t = setTimeout(() => setChartReady(true), 60);
+    return () => clearTimeout(t);
+  }, [data]);
 
-  if (!data) {
+  const bumpGoal = async (g: Goal, delta: number) => {
+    const progress = Math.min(100, Math.max(0, g.progress + delta));
+    setData((d) =>
+      d && {
+        ...d,
+        topGoals: d.topGoals.map((x) =>
+          x.id === g.id ? { ...x, progress, completed: progress >= 100 } : x,
+        ),
+      },
+    );
+    try {
+      await api("/api/goals", jpatch({ id: g.id, progress }));
+      if (progress >= 100) notify("Цель достигнута! 🎉");
+    } catch {
+      notify("Не удалось обновить цель");
+      load();
+    }
+  };
+
+  if (err)
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-white/40">Загрузка...</div>
+      <NeonPanel accent="#ff5470" className="p-8 text-center">
+        <div className="font-display text-lg font-bold text-neon-red">СБОЙ СВЯЗИ</div>
+        <p className="mt-2 text-sm text-mute">{err}</p>
+        <Btn className="mt-4" accent="#ff5470" onClick={load}>
+          Повторить
+        </Btn>
+      </NeonPanel>
+    );
+
+  if (!data)
+    return (
+      <div className="space-y-4">
+        <Loader />
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-28 animate-pulse rounded-[10px] bg-white/[0.04]" />
+          ))}
+        </div>
       </div>
     );
-  }
 
-  const goalsProgress = data.goals.total > 0 ? (data.goals.completed / data.goals.total) * 100 : 0;
-  const balance = parseFloat(data.finance.totalIncome) - parseFloat(data.finance.totalExpense);
-  const monthBalance = parseFloat(data.finance.monthIncome) - parseFloat(data.finance.monthExpense);
+  const maxSpend = Math.max(1, ...data.spend14.map((s) => s.total));
+  const spend14Total = data.spend14.reduce((s, x) => s + x.total, 0);
+  const monthTotal = data.incomeMonth + data.expenseMonth;
 
   return (
-    <div className="overflow-y-auto" style={{ height: "100dvh", paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}>
-      {/* Greeting */}
-      <div className="px-5 pt-4 pb-2">
-        <div className="text-sm text-white/40">{todayStr}</div>
-        <h1 className="mt-1 text-[28px] font-bold text-white tracking-tight">LifeOS</h1>
-      </div>
-
-      {/* Main stat — balance */}
-      <div className="px-5 mb-4">
-        <div
-          className="rounded-3xl p-5 relative overflow-hidden"
-          style={{
-            background: `linear-gradient(135deg, ${balance >= 0 ? "#0a2e22" : "#2e0a15"}, #0a0a14)`,
-            border: `1px solid ${balance >= 0 ? "rgba(0,255,163,0.2)" : "rgba(255,45,111,0.2)"}`,
-          }}
-        >
-          <div className="text-xs font-medium text-white/50 mb-1">Общий баланс</div>
-          <div className="text-[34px] font-extrabold tracking-tight" style={{ color: balance >= 0 ? "#00ffa3" : "#ff2d6f" }}>
-            {balance >= 0 ? "+" : "−"}{formatMoney(Math.abs(balance))}
+    <div className="space-y-3 sm:space-y-4">
+      {/* ── Плитки статистики ── */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <NeonPanel accent="#00e5ff" glow className="clip-corner col-span-2 p-4 sm:p-5">
+          <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.25em] text-mute">
+            <Wallet size={12} className="text-neon-cyan" /> Баланс · всё время
           </div>
-          <div className="flex items-center gap-3 mt-3">
-            <div className="flex items-center gap-1.5">
-              <div className="h-2 w-2 rounded-full bg-emerald-400" />
-              <span className="text-xs text-emerald-400/80">
-                +{formatMoney(parseFloat(data.finance.monthIncome))}
-              </span>
+          <div
+            className="mt-2 font-mono text-[26px] font-bold leading-none text-neon-cyan sm:text-4xl"
+            style={{ textShadow: "0 0 22px rgba(0,229,255,0.55)" }}
+          >
+            <CountUp value={data.balance} format={fmtMoney} />
+          </div>
+          <div className="mt-4">
+            <div className="flex h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+              <div
+                className="bg-neon-lime transition-[width] duration-700"
+                style={{
+                  width: `${monthTotal ? (data.incomeMonth / monthTotal) * 100 : 50}%`,
+                  boxShadow: "0 0 8px #b8ff2e",
+                }}
+              />
+              <div className="flex-1 bg-neon-magenta/80" style={{ boxShadow: "0 0 8px #ff2ec4" }} />
             </div>
-            <div className="flex items-center gap-1.5">
-              <div className="h-2 w-2 rounded-full bg-rose-400" />
-              <span className="text-xs text-rose-400/80">
-                −{formatMoney(parseFloat(data.finance.monthExpense))}
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-semibold">
+              <span className="inline-flex items-center gap-1 text-neon-lime">
+                <TrendingUp size={12} /> +{fmtMoney(data.incomeMonth)}
               </span>
+              <span className="inline-flex items-center gap-1 text-neon-magenta">
+                <TrendingDown size={12} /> −{fmtMoney(data.expenseMonth)}
+              </span>
+              <span className="text-mute">за текущий месяц</span>
             </div>
           </div>
-        </div>
-      </div>
+        </NeonPanel>
 
-      {/* Quick stats row */}
-      <div className="px-5 mb-4">
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard
-            icon="🎯"
-            value={`${data.goals.completed}/${data.goals.total}`}
-            label="Цели"
-            accent="#b14dff"
-            sublabel={data.goals.todayTotal > 0 ? `Сегодня: ${data.goals.todayCompleted}/${data.goals.todayTotal}` : undefined}
-            onClick={() => onNavigate("goals")}
-          />
-          <StatCard
-            icon="📝"
-            value={String(data.notes.total)}
-            label="Заметки"
-            accent="#00d4ff"
-            onClick={() => onNavigate("notes")}
-          />
-        </div>
-      </div>
-
-      {/* Month progress */}
-      <div className="px-5 mb-4">
-        <div
-          className="rounded-2xl p-4 border border-white/[0.08]"
-          style={{ background: "rgba(255,255,255,0.03)" }}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold text-white">Прогресс целей</span>
-            <span className="text-sm font-bold" style={{ color: "#b14dff" }}>{Math.round(goalsProgress)}%</span>
+        <NeonPanel accent="#b8ff2e" glow className="clip-corner p-4 sm:p-5">
+          <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.25em] text-mute">
+            <Target size={12} className="text-neon-lime" /> Цели
           </div>
-          <div className="h-2 rounded-full bg-white/8 overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-700"
-              style={{ width: `${goalsProgress}%`, background: "linear-gradient(90deg, #b14dff, #00d4ff)" }}
-            />
+          <div className="mt-2 font-mono text-[26px] font-bold leading-none text-neon-lime sm:text-4xl">
+            <CountUp value={data.goalsActive} />
+            <span className="ml-1 text-sm font-semibold text-mute">актив.</span>
           </div>
-        </div>
+          <div className="mt-4">
+            <ProgressBar value={data.avgProgress} color="#b8ff2e" />
+            <div className="mt-1.5 font-mono text-[11px] text-mute">
+              средний прогресс{" "}
+              <span className="text-neon-lime">{data.avgProgress}%</span>
+            </div>
+          </div>
+        </NeonPanel>
+
+        <NeonPanel accent="#ffb020" glow className="clip-corner p-4 sm:p-5">
+          <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.25em] text-mute">
+            <NotebookPen size={12} className="text-neon-amber" /> Заметки
+          </div>
+          <div className="mt-2 font-mono text-[26px] font-bold leading-none text-neon-amber sm:text-4xl">
+            <CountUp value={data.notesCount} />
+          </div>
+          <div className="mt-4 font-mono text-[11px] text-mute">
+            ⭐ {data.pinnedNotes} {plural(data.pinnedNotes, "закреплена", "закреплены", "закреплено")}
+            <br />
+            {data.txMonth} {plural(data.txMonth, "операция", "операции", "операций")} за месяц
+          </div>
+        </NeonPanel>
       </div>
 
-      {/* Quick actions */}
-      <div className="px-5 mb-6">
-        <div className="text-sm font-semibold text-white/70 mb-3">Быстрые действия</div>
-        <div className="grid grid-cols-4 gap-2">
-          <QuickBtn icon="➕" label="Цель" color="#ff2d6f" onClick={() => onNavigate("goals")} />
-          <QuickBtn icon="📉" label="Расход" color="#ff6b35" onClick={() => { onNavigate("finance"); }} />
-          <QuickBtn icon="📈" label="Доход" color="#00ffa3" onClick={() => { onNavigate("finance"); }} />
-          <QuickBtn icon="✏️" label="Заметка" color="#b14dff" onClick={() => onNavigate("notes")} />
-        </div>
-      </div>
-
-      {/* Recent transactions */}
-      {transactions.length > 0 && (
-        <div className="px-5 mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-semibold text-white/70">Последние операции</span>
-            <button
-              onClick={() => onNavigate("finance")}
-              className="text-xs font-semibold"
-              style={{ color: "#00ffa3" }}
-            >
-              Все →
-            </button>
-          </div>
-          <div className="space-y-2">
-            {transactions.slice(0, 5).map((txn) => {
-              const isIn = txn.type === "income";
-              return (
-                <div
-                  key={txn.id}
-                  className="flex items-center gap-3 rounded-2xl px-4 py-3 border border-white/[0.06]"
-                  style={{ background: "rgba(255,255,255,0.03)" }}
-                >
-                  <div className="text-lg">
-                    {isIn ? "📈" : "📉"}
+      {/* ── Основная сетка ── */}
+      <div className="grid gap-3 sm:gap-4 lg:grid-cols-3">
+        <div className="space-y-3 sm:space-y-4 lg:col-span-2">
+          {/* Расходы за 14 дней */}
+          <NeonPanel accent="#00e5ff" className="p-4 sm:p-5">
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="font-display text-xs font-bold uppercase tracking-wider">
+                Расходы <span className="text-mute">· 14 дней</span>
+              </div>
+              <div className="font-mono text-xs text-neon-cyan">Σ {fmtMoney(spend14Total)}</div>
+            </div>
+            <div className="mt-4 flex h-32 items-end gap-[3px] sm:h-36">
+              {data.spend14.map((s, i) => {
+                const h = s.total > 0 ? Math.max(5, (s.total / maxSpend) * 100) : 2;
+                const isToday = i === data.spend14.length - 1;
+                return (
+                  <div key={s.iso} className="group relative flex h-full flex-1 items-end">
+                    <div
+                      className="pointer-events-none absolute -top-1 left-1/2 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded border border-line bg-abyss px-2 py-1 text-center group-hover:block"
+                    >
+                      <div className="font-mono text-[10px] font-bold text-neon-cyan">
+                        {fmtMoney(s.total)}
+                      </div>
+                      <div className="font-mono text-[9px] text-mute">{fmtDateShort(s.iso)}</div>
+                    </div>
+                    <div
+                      className={cx(
+                        "w-full rounded-t-[2px] transition-all duration-700 ease-out group-hover:brightness-150",
+                        isToday ? "bg-gradient-to-t from-neon-magenta/30 to-neon-magenta" : "bg-gradient-to-t from-neon-cyan/15 to-neon-cyan/90",
+                      )}
+                      style={{
+                        height: chartReady ? `${h}%` : "0%",
+                        transitionDelay: `${i * 35}ms`,
+                        boxShadow: s.total > 0 ? `0 0 10px ${isToday ? "#ff2ec466" : "#00e5ff44"}` : "none",
+                      }}
+                    />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-white truncate">{txn.title}</div>
-                    <div className="text-xs text-white/30">{formatDate(txn.occurredOn)}</div>
+                );
+              })}
+            </div>
+            <div className="mt-2 flex justify-between font-mono text-[9px] text-mute/70">
+              <span>{data.spend14[0]?.label}</span>
+              <span className="text-neon-magenta">сегодня</span>
+            </div>
+          </NeonPanel>
+
+          {/* Последние операции */}
+          <NeonPanel accent="#ff2ec4" className="p-4 sm:p-5">
+            <div className="flex items-center justify-between">
+              <div className="font-display text-xs font-bold uppercase tracking-wider">
+                Последние операции
+              </div>
+              <button
+                onClick={() => go("finance")}
+                className="inline-flex items-center gap-1 font-mono text-[11px] text-neon-magenta transition-all hover:gap-2"
+              >
+                все <ArrowRight size={12} />
+              </button>
+            </div>
+            <div className="mt-3 divide-y divide-white/[0.04]">
+              {data.recentTx.map((t) => (
+                <div key={t.id} className="flex items-center gap-3 py-2.5">
+                  <div
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-base"
+                    style={{ background: `${t.category.color}1f`, boxShadow: `inset 0 0 0 1px ${t.category.color}44` }}
+                  >
+                    {t.category.icon}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold">
+                      {t.note || t.category.name}
+                    </div>
+                    <div className="font-mono text-[10px] text-mute">
+                      {t.category.name} · {fmtDateShort(t.date)}
+                    </div>
                   </div>
                   <div
-                    className="text-sm font-bold"
-                    style={{ color: isIn ? "#00ffa3" : "#ff2d6f" }}
+                    className={cx(
+                      "font-mono text-sm font-bold",
+                      t.type === "income" ? "text-neon-lime" : "text-neon-magenta",
+                    )}
                   >
-                    {isIn ? "+" : "−"}{formatMoney(Number(txn.amount))}
+                    {fmtMoneySigned(t.amount, t.type)}
                   </div>
                 </div>
-              );
-            })}
-          </div>
+              ))}
+              {data.recentTx.length === 0 && (
+                <EmptyState title="Пока пусто" text="Добавьте первую операцию в разделе «Финансы»." />
+              )}
+            </div>
+          </NeonPanel>
         </div>
-      )}
+
+        {/* Правая колонка */}
+        <div className="space-y-3 sm:space-y-4">
+          <NeonPanel accent="#b8ff2e" className="p-4 sm:p-5">
+            <div className="flex items-center justify-between">
+              <div className="font-display text-xs font-bold uppercase tracking-wider">
+                <Sparkles size={12} className="mr-1 inline text-neon-lime" />
+                Фокус
+              </div>
+              <button
+                onClick={() => go("goals")}
+                className="inline-flex items-center gap-1 font-mono text-[11px] text-neon-lime transition-all hover:gap-2"
+              >
+                цели <ArrowRight size={12} />
+              </button>
+            </div>
+            <div className="mt-3 space-y-3.5">
+              {data.topGoals.map((g) => (
+                <div key={g.id}>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ background: g.color, boxShadow: `0 0 8px ${g.color}` }}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{g.title}</span>
+                    <button
+                      onClick={() => bumpGoal(g, +5)}
+                      title="+5%"
+                      className="inline-flex h-7 items-center gap-0.5 rounded-md border border-neon-lime/40 px-1.5 font-mono text-[10px] font-bold text-neon-lime transition-all hover:bg-neon-lime/10 hover:shadow-[0_0_12px_rgba(184,255,46,0.3)] active:scale-95"
+                    >
+                      <Zap size={10} /> +5
+                    </button>
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-2 pl-4">
+                    <ProgressBar value={g.progress} color={g.color} className="flex-1" />
+                    <span className="w-9 text-right font-mono text-[11px] font-bold" style={{ color: g.color }}>
+                      {g.progress}%
+                    </span>
+                  </div>
+                  {g.dueDate && (
+                    <div className="mt-1 flex items-center gap-1 pl-4 font-mono text-[10px] text-mute">
+                      <CalendarDays size={10} />
+                      {daysLeft(g.dueDate) >= 0
+                        ? `${daysLeft(g.dueDate)} дн. до дедлайна`
+                        : "дедлайн прошёл"}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {data.topGoals.length === 0 && (
+                <EmptyState title="Нет активных целей" text="Самое время поставить первую." />
+              )}
+            </div>
+          </NeonPanel>
+
+          <NeonPanel accent="#ffb020" className="p-4 sm:p-5">
+            <div className="flex items-center justify-between">
+              <div className="font-display text-xs font-bold uppercase tracking-wider">Заметки</div>
+              <button
+                onClick={() => go("notes")}
+                className="inline-flex items-center gap-1 font-mono text-[11px] text-neon-amber transition-all hover:gap-2"
+              >
+                все <ArrowRight size={12} />
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {data.latestNotes.map((n) => (
+                <button
+                  key={n.id}
+                  onClick={() => go("notes")}
+                  className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2 py-1.5 text-left transition-all hover:border-line hover:bg-white/[0.03]"
+                >
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ background: n.color, boxShadow: `0 0 8px ${n.color}` }}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
+                    {n.pinned && "⭐ "}
+                    {n.title}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </NeonPanel>
+
+          {/* Быстрые действия */}
+          <NeonPanel accent="#9d6bff" className="p-4 sm:p-5">
+            <div className="font-display text-xs font-bold uppercase tracking-wider">
+              Быстрый старт
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <Btn ghost accent="#ff2ec4" className="!px-2 !py-2.5 !text-[11px]" onClick={() => go("goals", "new-goal")}>
+                <Plus size={13} /> Цель
+              </Btn>
+              <Btn ghost accent="#b8ff2e" className="!px-2 !py-2.5 !text-[11px]" onClick={() => go("finance", "new-tx")}>
+                <Plus size={13} /> Опер.
+              </Btn>
+              <Btn ghost accent="#ffb020" className="!px-2 !py-2.5 !text-[11px]" onClick={() => go("notes", "new-note")}>
+                <Plus size={13} /> Заметка
+              </Btn>
+            </div>
+          </NeonPanel>
+        </div>
+      </div>
     </div>
   );
 }
 
-function StatCard({
-  icon, value, label, accent, sublabel, onClick,
-}: {
-  icon: string; value: string; label: string; accent: string;
-  sublabel?: string; onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="rounded-2xl p-4 text-left border border-white/[0.08] transition-all active:scale-95"
-      style={{ background: "rgba(255,255,255,0.03)" }}
-    >
-      <div className="text-2xl mb-2">{icon}</div>
-      <div className="text-xl font-bold text-white">{value}</div>
-      <div className="text-xs text-white/40 mt-0.5">{label}</div>
-      {sublabel && <div className="text-[10px] mt-1" style={{ color: accent }}>{sublabel}</div>}
-    </button>
-  );
-}
-
-function QuickBtn({ icon, label, color, onClick }: {
-  icon: string; label: string; color: string; onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex flex-col items-center justify-center rounded-2xl py-3 border border-white/[0.06] transition-all active:scale-90"
-      style={{ background: `${color}10` }}
-    >
-      <span className="text-2xl mb-1">{icon}</span>
-      <span className="text-[11px] font-medium" style={{ color }}>{label}</span>
-    </button>
-  );
-}
-
-function formatMoney(n: number): string {
-  return new Intl.NumberFormat("ru-RU", {
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
-function formatDate(d: Date | string): string {
-  const date = typeof d === "string" ? new Date(d) : d;
-  return `${date.getDate()} ${MONTHS[date.getMonth()]}`;
-}

@@ -1,73 +1,114 @@
-import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { goals, transactions, notes } from "@/db/schema";
-import { sql, gte, lte, and } from "drizzle-orm";
+import { categories, goals, notes, transactions } from "@/db/schema";
+import { desc, eq } from "drizzle-orm";
+import { localISO, monthKeyOf } from "@/lib/core";
+import type { DashboardData, Transaction } from "@/lib/core";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/dashboard — summary data
 export async function GET() {
-  try {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const [catRows, txRows, goalRows, noteRows] = await Promise.all([
+    db.select().from(categories),
+    db
+      .select({ t: transactions, c: categories })
+      .from(transactions)
+      .innerJoin(categories, eq(transactions.categoryId, categories.id))
+      .orderBy(desc(transactions.date), desc(transactions.id)),
+    db.select().from(goals),
+    db.select().from(notes).orderBy(desc(notes.pinned), desc(notes.updatedAt)),
+  ]);
 
-    // Goals stats
-    const goalsData = await db
-      .select({
-        total: sql<number>`count(*)::int`,
-        completed: sql<number>`count(*) filter (where completed = true)::int`,
-      })
-      .from(goals);
+  const catById = new Map(catRows.map((c) => [c.id, c]));
+  const txs: Transaction[] = txRows.map(({ t, c }) => ({
+    id: t.id,
+    amount: Number(t.amount),
+    type: t.type,
+    note: t.note,
+    date: t.date,
+    category: c,
+  }));
 
-    // Today's goals
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todayGoals = await db
-      .select({
-        total: sql<number>`count(*)::int`,
-        completed: sql<number>`count(*) filter (where completed = true)::int`,
-      })
-      .from(goals)
-      .where(
-        and(
-          sql`${goals.timeframe} = 'day'`,
-          gte(goals.createdAt, today)
-        )
-      );
+  const now = new Date();
+  const monthKey = monthKeyOf(localISO(now));
 
-    // Finance stats
-    const financeData = await db
-      .select({
-        totalIncome: sql<string>`coalesce(sum(case when type = 'income' then amount else 0 end), 0)`,
-        totalExpense: sql<string>`coalesce(sum(case when type = 'expense' then amount else 0 end), 0)`,
-        monthIncome: sql<string>`coalesce(sum(case when type = 'income' and occurred_on >= ${monthStart} then amount else 0 end), 0)`,
-        monthExpense: sql<string>`coalesce(sum(case when type = 'expense' and occurred_on >= ${monthStart} then amount else 0 end), 0)`,
-      })
-      .from(transactions);
-
-    // Notes count
-    const notesCount = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(notes);
-
-    return NextResponse.json({
-      goals: {
-        total: goalsData[0]?.total ?? 0,
-        completed: goalsData[0]?.completed ?? 0,
-        todayTotal: todayGoals[0]?.total ?? 0,
-        todayCompleted: todayGoals[0]?.completed ?? 0,
-      },
-      finance: {
-        totalIncome: financeData[0]?.totalIncome ?? "0",
-        totalExpense: financeData[0]?.totalExpense ?? "0",
-        monthIncome: financeData[0]?.monthIncome ?? "0",
-        monthExpense: financeData[0]?.monthExpense ?? "0",
-      },
-      notes: {
-        total: notesCount[0]?.count ?? 0,
-      },
-    });
-  } catch (error) {
-    console.error("Failed to fetch dashboard:", error);
-    return NextResponse.json({ error: "Failed to fetch dashboard" }, { status: 500 });
+  let balance = 0;
+  let incomeMonth = 0;
+  let expenseMonth = 0;
+  let txMonth = 0;
+  for (const t of txs) {
+    balance += t.type === "income" ? t.amount : -t.amount;
+    if (monthKeyOf(t.date) === monthKey) {
+      txMonth += 1;
+      if (t.type === "income") incomeMonth += t.amount;
+      else expenseMonth += t.amount;
+    }
   }
+
+  // Расходы за последние 14 дней
+  const spend14: DashboardData["spend14"] = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    const iso = localISO(d);
+    spend14.push({
+      iso,
+      label: d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }),
+      total: 0,
+    });
+  }
+  const dayIdx = new Map(spend14.map((s, i) => [s.iso, i]));
+  for (const t of txs) {
+    if (t.type !== "expense") continue;
+    const i = dayIdx.get(t.date);
+    if (i !== undefined) spend14[i].total += t.amount;
+  }
+
+  const active = goalRows.filter((g) => !g.completed);
+  const done = goalRows.filter((g) => g.completed);
+  const avgProgress = active.length
+    ? Math.round(active.reduce((s, g) => s + g.progress, 0) / active.length)
+    : 0;
+  const topGoals = [...active]
+    .sort((a, b) => {
+      const ad = a.dueDate ?? "9999-12-31";
+      const bd = b.dueDate ?? "9999-12-31";
+      return ad.localeCompare(bd);
+    })
+    .slice(0, 3)
+    .map((g) => ({
+      id: g.id,
+      title: g.title,
+      description: g.description,
+      category: g.category,
+      color: g.color,
+      progress: g.progress,
+      dueDate: g.dueDate,
+      completed: g.completed,
+    }));
+
+  const latestNotes = noteRows.slice(0, 3).map((n) => ({
+    id: n.id,
+    title: n.title,
+    content: n.content,
+    color: n.color,
+    pinned: n.pinned,
+    updatedAt: n.updatedAt.toISOString(),
+  }));
+
+  const data: DashboardData = {
+    balance,
+    incomeMonth,
+    expenseMonth,
+    txMonth,
+    goalsActive: active.length,
+    goalsDone: done.length,
+    avgProgress,
+    topGoals,
+    notesCount: noteRows.length,
+    pinnedNotes: noteRows.filter((n) => n.pinned).length,
+    latestNotes,
+    recentTx: txs.slice(0, 5),
+    spend14,
+  };
+
+  return Response.json(data);
 }

@@ -1,54 +1,87 @@
--- Seed data for LifeOS
--- Usage: psql postgresql://user:pass@host:5432/dbname < seed.sql
+-- ============================================================
+-- LifeOS · стартовые данные
+-- Применение схемы:  npx drizzle-kit push
+-- Посев:             psql $DATABASE_URL -f seed.sql
+-- Даты считаются от CURRENT_DATE, чтобы демо всегда было «живым».
+-- Скрипт идемпотентен: повторный запуск данные не дублирует.
+-- ============================================================
 
--- Finance categories
-INSERT INTO finance_categories (name, emoji, type, color, position) VALUES
-('Зарплата', '💼', 'income', '#00ffa3', 1),
-('Фриланс', '💻', 'income', '#00d4ff', 2),
-('Подарки', '🎁', 'income', '#ff2d6f', 3),
-('Инвестиции', '📈', 'income', '#b14dff', 4),
-('Другое', '💰', 'income', '#ffb020', 5),
-('Еда', '🍕', 'expense', '#ff6b35', 10),
-('Транспорт', '🚗', 'expense', '#00d4ff', 11),
-('Жильё', '🏠', 'expense', '#b14dff', 12),
-('Развлечения', '🎮', 'expense', '#ff2d6f', 13),
-('Здоровье', '💊', 'expense', '#00ffa3', 14),
-('Одежда', '👕', 'expense', '#ffb020', 15),
-('Подписки', '📱', 'expense', '#00d4ff', 16),
-('Другое', '💸', 'expense', '#ff6b35', 17);
+INSERT INTO categories (id, name, icon, color, type) VALUES
+  (1,  'Еда',         '🍔', '#ffb020', 'expense'),
+  (2,  'Жильё',       '🏠', '#ff2ec4', 'expense'),
+  (3,  'Транспорт',   '🚗', '#00e5ff', 'expense'),
+  (4,  'Развлечения', '🎮', '#9d6bff', 'expense'),
+  (5,  'Здоровье',    '💊', '#ff5470', 'expense'),
+  (6,  'Покупки',     '🛍️', '#38bdf8', 'expense'),
+  (7,  'Обучение',    '📚', '#b8ff2e', 'expense'),
+  (8,  'Зарплата',    '💼', '#b8ff2e', 'income'),
+  (9,  'Фриланс',     '💻', '#00e5ff', 'income'),
+  (10, 'Инвестиции',  '📈', '#ffd166', 'income')
+ON CONFLICT (id) DO NOTHING;
 
--- Example transactions
-INSERT INTO transactions (type, amount, title, notes, category_id, occurred_on) VALUES
-('income', 85000, 'Зарплата', 'Основная работа', 1, now() - interval '30 days'),
-('income', 15000, 'Фриланс', 'Дизайн логотипа', 2, now() - interval '25 days'),
-('expense', 3500, 'Продукты', 'Еда на неделю', 6, now() - interval '28 days'),
-('expense', 1500, 'Кафе', 'Обед с коллегами', 6, now() - interval '20 days'),
-('expense', 2000, 'Такси', 'Поездки за неделю', 7, now() - interval '18 days'),
-('expense', 25000, 'Аренда', 'Квартира', 8, now() - interval '25 days'),
-('expense', 5000, 'Кино', 'Выходные', 9, now() - interval '15 days'),
-('expense', 1200, 'Аптека', 'Лекарства', 10, now() - interval '10 days'),
-('income', 8000, 'Подарок', 'На день рождения', 3, now() - interval '7 days'),
-('expense', 3000, 'Одежда', 'Новая рубашка', 11, now() - interval '5 days'),
-('expense', 800, 'Spotify', 'Подписка', 12, now() - interval '3 days'),
-('income', 20000, 'Инвестиции', 'Дивиденды', 4, now() - interval '2 days'),
-('expense', 4500, 'Ресторан', 'Ужин', 6, now() - interval '1 day'),
-('expense', 1000, 'Метро', 'Проездной', 7, now());
+INSERT INTO transactions (id, category_id, amount, type, note, date) VALUES
+  -- доходы
+  (1,  8,  88000.00, 'income',  'Зарплата за месяц',      CURRENT_DATE - 35),
+  (2,  9,  24500.00, 'income',  'Проект для клиента',     CURRENT_DATE - 21),
+  (3,  10,  6200.00, 'income',  'Дивиденды',              CURRENT_DATE - 12),
+  (4,  8,  88000.00, 'income',  'Зарплата',               CURRENT_DATE - 5),
+  (5,  9,   9800.00, 'income',  'Консультация',           CURRENT_DATE - 2),
+  -- прошлый месяц (расходы)
+  (6,  2,  32000.00, 'expense', 'Аренда',                 CURRENT_DATE - 55),
+  (7,  1,   3800.00, 'expense', 'Продукты на неделю',     CURRENT_DATE - 40),
+  (8,  4,   2100.00, 'expense', 'Кино + попкорн',         CURRENT_DATE - 45),
+  (9,  3,    900.00, 'expense', 'Такси',                  CURRENT_DATE - 38),
+  (10, 6,   5600.00, 'expense', 'Кроссовки',              CURRENT_DATE - 42),
+  -- текущий месяц (расходы)
+  (11, 2,  32000.00, 'expense', 'Аренда квартиры',        CURRENT_DATE - 25),
+  (12, 1,   2450.00, 'expense', 'Супермаркет',            CURRENT_DATE - 1),
+  (13, 1,   1180.00, 'expense', 'Кофе и снеки',           CURRENT_DATE - 4),
+  (14, 1,   3260.00, 'expense', 'Продукты',               CURRENT_DATE - 8),
+  (15, 1,   1540.00, 'expense', 'Доставка еды',           CURRENT_DATE - 13),
+  (16, 1,   2890.00, 'expense', 'Рынок',                  CURRENT_DATE - 19),
+  (17, 3,    650.00, 'expense', 'Метро',                  CURRENT_DATE - 2),
+  (18, 3,    450.00, 'expense', 'Каршеринг',              CURRENT_DATE - 9),
+  (19, 3,   1200.00, 'expense', 'Такси ночью',            CURRENT_DATE - 16),
+  (20, 4,   1990.00, 'expense', 'Подписки на сервисы',    CURRENT_DATE - 3),
+  (21, 4,   2400.00, 'expense', 'Концерт',                CURRENT_DATE - 11),
+  (22, 5,   3500.00, 'expense', 'Витамины и аптека',      CURRENT_DATE - 6),
+  (23, 6,   8990.00, 'expense', 'Наушники',               CURRENT_DATE - 7),
+  (24, 7,   4900.00, 'expense', 'Курс по TypeScript',     CURRENT_DATE - 14)
+ON CONFLICT (id) DO NOTHING;
 
--- Example notes
-INSERT INTO notes (title, content, color, pinned) VALUES
-('Идеи для проекта', '1. Добавить графики доходов/расходов
-2. Экспорт в CSV
-3. Категории с иконками
-4. Напоминания о целях', '#b14dff', true),
-('Список покупок', '• Молоко
-• Хлеб
-• Яблоки
-• Кофе
-• Сыр', '#00ffa3', false),
-('Книги к прочтению', '1. Атомные привычки
-2. Думай медленно, решай быстро
-3. Поток
-4. Цифровой минимализм', '#00d4ff', false),
-('Фильмы на выходные', 'Интерстеллар, Начало, Матрица', '#ff2d6f', false),
-('Рецепт пасты', 'Макароны, томаты, базилик, чеснок, оливковое масло. Варить 10 минут, обжарить чеснок, добавить томаты...', '#ffb020', false),
-('Планы на месяц', 'Завершить проект, сходить в спортзал 12 раз, прочитать 2 книги, выучить 100 слов', '#b14dff', true);
+INSERT INTO goals (id, title, description, category, color, progress, due_date, completed) VALUES
+  (1, 'Пробежать полумарафон',  'Тренировки 3 раза в неделю, контроль пульса, длинные пробежки по воскресеньям.', 'Спорт',    '#ff2ec4', 62,  CURRENT_DATE + 45,  false),
+  (2, 'Закрыть курс TypeScript','Осталось 4 модуля и финальный проект. По вечерам, 1 час в день.',                 'Обучение', '#00e5ff', 78,  CURRENT_DATE + 20,  false),
+  (3, 'Подушка безопасности',   'Накопить 300 000 ₽ на отдельном счёте. Откладывать 20% с каждого дохода.',        'Финансы',  '#b8ff2e', 41,  CURRENT_DATE + 90,  false),
+  (4, 'Английский до B2',       'Разговорные клубы по средам, сериалы в оригинале, 20 новых слов в неделю.',       'Обучение', '#9d6bff', 35,  CURRENT_DATE + 120, false),
+  (5, 'Режим подъёма в 6:30',   'Без телефона за час до сна, стакан воды сразу после подъёма.',                     'Здоровье', '#ffb020', 88,  CURRENT_DATE + 10,  false),
+  (6, 'Запустить пет-проект',   'MVP трекера привычек: Next.js + Postgres, деплой на Netlify.',                    'Карьера',  '#38bdf8', 15,  CURRENT_DATE + 60,  false),
+  (7, '10 000 шагов ежедневно', 'Месяц без пропусков — челлендж выполнен.',                                         'Здоровье', '#b8ff2e', 100, CURRENT_DATE - 3,   true)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO notes (id, title, content, color, pinned) VALUES
+  (1, 'Идеи на выходные', '• Сходить на выставку неона в Гараже
+• Вело-маршрут по набережной, ~25 км
+• Позвать Лёху на рамен
+• Досмотреть «Основание»', '#00e5ff', true),
+  (2, 'Книги к прочтению', '1. «Атомные привычки» — Джеймс Клир
+2. «Хочу к Теодору Драйзеру»
+3. «Думай медленно… решай быстро»
+4. «Проект Аве Мария»', '#9d6bff', false),
+  (3, 'Идеи подарков', 'Маме — робот-пылесос
+Ане — плед с подогревом
+Себе — механическую клавиатуру 👀', '#ff2ec4', false),
+  (4, 'План тренировки · ПН', 'Разминка 10 мин
+Присед 4×12
+Жим лёжа 4×8
+Тяга в наклоне 3×10
+Планка 3×60 сек', '#b8ff2e', false),
+  (5, 'Цитата дня', '«Мы — это то, что мы делаем постоянно. Совершенство — не действие, а привычка» — Аристотель', '#ffb020', true),
+  (6, 'Итоги созвона', 'Перенести дедлайн спринта на пятницу. Дизайн новых карточек готов на 80%. Бэклогом занимается Ира.', '#38bdf8', false)
+ON CONFLICT (id) DO NOTHING;
+
+-- Синхронизация серийных счётчиков, чтобы новые записи не конфликтовали с сидом
+SELECT setval(pg_get_serial_sequence('categories', 'id'),    COALESCE((SELECT MAX(id) FROM categories), 1));
+SELECT setval(pg_get_serial_sequence('transactions', 'id'),  COALESCE((SELECT MAX(id) FROM transactions), 1));
+SELECT setval(pg_get_serial_sequence('goals', 'id'),         COALESCE((SELECT MAX(id) FROM goals), 1));
+SELECT setval(pg_get_serial_sequence('notes', 'id'),         COALESCE((SELECT MAX(id) FROM notes), 1));
