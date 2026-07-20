@@ -1,405 +1,254 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
-import { ArrowDownLeft, ArrowUpRight, PiggyBank, Plus, TrendingDown, TrendingUp } from "lucide-react";
-import {
-  Btn,
-  CountUp,
-  EmptyState,
-  Loader,
-  NeonPanel,
-  SectionHead,
-  cx,
-  inputNeon,
-} from "./ui";
-import { api, fmtDateShort, fmtMoney, jpost, todayISO } from "@/lib/core";
-import type { FinanceData, SectionProps, TxType } from "@/lib/core";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import type { FinanceCategory, Transaction } from "@/db/schema";
+import type { Period } from "@/lib/utils";
+import { getPeriodRange } from "@/lib/utils";
+import { TransactionForm } from "./TransactionForm";
 
-export default function FinanceSection({ notify, intent, clearIntent }: SectionProps) {
-  const [data, setData] = useState<FinanceData | null>(null);
+interface ExtTxn extends Transaction {
+  categoryName?: string | null;
+  categoryEmoji?: string | null;
+  categoryColor?: string | null;
+}
+
+const MONTHS = ["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
+const WEEKDAYS = ["Вс","Пн","Вт","Ср","Чт","Пт","Сб"];
+
+const PERIODS: { key: Period; label: string }[] = [
+  { key: "day", label: "Сегодня" },
+  { key: "week", label: "Неделя" },
+  { key: "month", label: "Месяц" },
+  { key: "year", label: "Год" },
+  { key: "all", label: "Всё" },
+];
+
+export function FinanceSection({ initialTransactions, initialCategories }: {
+  initialTransactions: Transaction[];
+  initialCategories: FinanceCategory[];
+}) {
+  const [txns, setTxns] = useState<ExtTxn[]>(initialTransactions as ExtTxn[]);
+  const [period, setPeriod] = useState<Period>("month");
+  const [typeFilter, setTypeFilter] = useState<"all" | "income" | "expense">("all");
   const [formOpen, setFormOpen] = useState(false);
-  const [type, setType] = useState<TxType>("expense");
-  const [amount, setAmount] = useState("");
-  const [categoryId, setCategoryId] = useState<number>(0);
-  const [note, setNote] = useState("");
-  const [date, setDate] = useState(todayISO());
-  const [txFilter, setTxFilter] = useState<"all" | TxType>("all");
-  const [catFilter, setCatFilter] = useState(0);
-  const [chartReady, setChartReady] = useState(false);
+  const [editing, setEditing] = useState<ExtTxn | null>(null);
 
-  const load = useCallback(async () => {
+  const incomeCats = initialCategories.filter((c) => c.type === "income" || c.type === "both");
+  const expenseCats = initialCategories.filter((c) => c.type === "expense" || c.type === "both");
+
+  const refresh = useCallback(async () => {
     try {
-      setData(await api<FinanceData>("/api/finance"));
-    } catch {
-      notify("Не удалось загрузить финансы");
+      const r = getPeriodRange(period);
+      const p = new URLSearchParams({ from: r.from.toISOString(), to: r.to.toISOString() });
+      if (typeFilter !== "all") p.set("type", typeFilter);
+      const res = await fetch(`/api/finance/transactions?${p}`);
+      if (res.ok) setTxns(await res.json());
+    } catch {}
+  }, [period, typeFilter]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const stats = useMemo(() => {
+    let inc = 0, exp = 0;
+    const cats = new Map<string, { name: string; emoji: string; color: string; amt: number; type: string }>();
+    for (const t of txns) {
+      const a = Number(t.amount);
+      if (t.type === "income") inc += a; else exp += a;
+      const key = t.categoryId ? `c${t.categoryId}` : `u${t.type}`;
+      if (!cats.has(key)) cats.set(key, { name: t.categoryName ?? "Без категории", emoji: t.categoryEmoji ?? (t.type === "income" ? "💰" : "💸"), color: t.categoryColor ?? (t.type === "income" ? "#00ffa3" : "#ff2d6f"), amt: 0, type: t.type });
+      cats.get(key)!.amt += a;
     }
-  }, [notify]);
+    return { inc, exp, bal: inc - exp, cats: Array.from(cats.values()).sort((a, b) => b.amt - a.amt) };
+  }, [txns]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    if (!data) return;
-    const t = setTimeout(() => setChartReady(true), 60);
-    return () => clearTimeout(t);
-  }, [data]);
-
-  const typeCats = useMemo(
-    () => (data ? data.categories.filter((c) => c.type === type) : []),
-    [data, type],
-  );
-
-  useEffect(() => {
-    if (typeCats.length && !typeCats.some((c) => c.id === categoryId)) {
-      setCategoryId(typeCats[0].id);
-    }
-  }, [typeCats, categoryId]);
-
-  useEffect(() => {
-    if (intent === "new-tx") {
-      setFormOpen(true);
-      clearIntent();
-    }
-  }, [intent, clearIntent]);
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    const val = Number(amount.replace(",", "."));
-    if (!Number.isFinite(val) || val <= 0 || !categoryId) {
-      notify("Укажите сумму и категорию");
-      return;
-    }
+  async function save(data: any, id: number | null) {
+    setFormOpen(false);
     try {
-      await api("/api/finance", jpost({ categoryId, amount: val, note, date }));
-      notify("Операция добавлена ⚡");
-      setAmount("");
-      setNote("");
-      setFormOpen(false);
-      load();
-    } catch (err) {
-      notify(err instanceof Error ? err.message : "Ошибка сохранения");
+      const url = id ? `/api/finance/transactions/${id}` : "/api/finance/transactions";
+      const res = await fetch(url, { method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (res.ok) refresh();
+    } catch {}
+  }
+
+  async function del(id: number) {
+    setTxns((p) => p.filter((t) => t.id !== id));
+    try { await fetch(`/api/finance/transactions/${id}`, { method: "DELETE" }); } catch { refresh(); }
+  }
+
+  const byDay = useMemo(() => {
+    const map = new Map<string, { date: Date; items: ExtTxn[] }>();
+    for (const t of txns) {
+      const d = new Date(t.occurredOn);
+      const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      if (!map.has(k)) map.set(k, { date: d, items: [] });
+      map.get(k)!.items.push(t);
     }
-  };
-
-  const removeTx = async (id: number) => {
-    await api(`/api/finance?id=${id}`, { method: "DELETE" });
-    setData((d) => d && { ...d, transactions: d.transactions.filter((t) => t.id !== id) });
-    notify("Операция удалена");
-    load();
-  };
-
-  if (!data) return <Loader />;
-
-  const shownTx = data.transactions.filter(
-    (t) =>
-      (txFilter === "all" || t.type === txFilter) &&
-      (catFilter === 0 || t.category.id === catFilter),
-  );
-
-  const maxFlow = Math.max(1, ...data.byMonth.flatMap((m) => [m.income, m.expense]));
+    return Array.from(map.values()).sort((a, b) => b.date.getTime() - a.date.getTime());
+  }, [txns]);
 
   return (
-    <div>
-      <SectionHead code="03 · FINANCE" title="Финансы" accent="#b8ff2e">
-        <Btn accent="#b8ff2e" onClick={() => setFormOpen((v) => !v)}>
-          <Plus size={15} /> Операция
-        </Btn>
-      </SectionHead>
-
-      {/* сводка */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
-        <NeonPanel accent="#00e5ff" glow className="clip-corner p-4 sm:p-5">
-          <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.25em] text-mute">
-            <PiggyBank size={12} className="text-neon-cyan" /> Текущий баланс
-          </div>
-          <div
-            className="mt-2 font-mono text-2xl font-bold text-neon-cyan sm:text-3xl"
-            style={{ textShadow: "0 0 20px rgba(0,229,255,0.55)" }}
-          >
-            <CountUp value={data.balance} format={fmtMoney} />
-          </div>
-        </NeonPanel>
-        <NeonPanel accent="#b8ff2e" glow className="clip-corner p-4 sm:p-5">
-          <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.25em] text-mute">
-            <TrendingUp size={12} className="text-neon-lime" /> Доходы · месяц
-          </div>
-          <div
-            className="mt-2 font-mono text-2xl font-bold text-neon-lime sm:text-3xl"
-            style={{ textShadow: "0 0 20px rgba(184,255,46,0.45)" }}
-          >
-            <CountUp value={data.incomeMonth} format={(n) => `+ ${fmtMoney(n)}`} />
-          </div>
-        </NeonPanel>
-        <NeonPanel accent="#ff2ec4" glow className="clip-corner p-4 sm:p-5">
-          <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.25em] text-mute">
-            <TrendingDown size={12} className="text-neon-magenta" /> Расходы · месяц
-          </div>
-          <div
-            className="mt-2 font-mono text-2xl font-bold text-neon-magenta sm:text-3xl"
-            style={{ textShadow: "0 0 20px rgba(255,46,196,0.45)" }}
-          >
-            <CountUp value={data.expenseMonth} format={(n) => `− ${fmtMoney(n)}`} />
-          </div>
-        </NeonPanel>
+    <>
+      {/* Header */}
+      <div className="px-5 pt-4 pb-1">
+        <div className="flex items-center justify-between">
+          <h1 className="text-[28px] font-bold text-white tracking-tight">Финансы</h1>
+          <button onClick={refresh} className="h-9 w-9 flex items-center justify-center rounded-full active:scale-90 transition-transform">
+            <svg viewBox="0 0 24 24" className="h-5 w-5 text-white/50" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 4v6h-6" /><path d="M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      <div className="mt-3 grid gap-3 sm:mt-4 sm:gap-4 lg:grid-cols-3">
-        {/* левая колонка */}
-        <div className="order-2 space-y-3 sm:space-y-4 lg:order-1 lg:col-span-2">
-          {/* денежный поток */}
-          <NeonPanel accent="#9d6bff" className="p-4 sm:p-5">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <div className="font-display text-xs font-bold uppercase tracking-wider">
-                Денежный поток <span className="text-mute">· 5 месяцев</span>
-              </div>
-              <div className="flex gap-3 font-mono text-[10px]">
-                <span className="text-neon-lime">■ доходы</span>
-                <span className="text-neon-magenta">■ расходы</span>
-              </div>
+      {/* Balance */}
+      <div className="px-5 mb-3">
+        <div
+          className="rounded-2xl p-4 border"
+          style={{
+            background: stats.bal >= 0 ? "rgba(0,255,163,0.06)" : "rgba(255,45,111,0.06)",
+            borderColor: stats.bal >= 0 ? "rgba(0,255,163,0.15)" : "rgba(255,45,111,0.15)",
+          }}
+        >
+          <div className="text-xs text-white/40 mb-1">Баланс</div>
+          <div className="text-[30px] font-extrabold tracking-tight" style={{ color: stats.bal >= 0 ? "#00ffa3" : "#ff2d6f" }}>
+            {stats.bal >= 0 ? "+" : "−"}{fm(Math.abs(stats.bal))}
+          </div>
+          <div className="flex gap-4 mt-2">
+            <div className="text-xs">
+              <span className="text-white/40">Доходы</span>
+              <div className="text-sm font-semibold text-emerald-400">+{fm(stats.inc)}</div>
             </div>
-            <div className="mt-4 flex h-36 items-end justify-around gap-2">
-              {data.byMonth.map((m, i) => (
-                <div key={m.key} className="group flex h-full flex-1 flex-col items-center justify-end">
-                  <div className="flex h-full w-full items-end justify-center gap-1.5">
-                    <div
-                      className="w-3 rounded-t-[2px] bg-gradient-to-t from-neon-lime/20 to-neon-lime transition-all duration-700 group-hover:brightness-150 sm:w-5"
-                      style={{
-                        height: chartReady ? `${Math.max(2, (m.income / maxFlow) * 100)}%` : "0%",
-                        transitionDelay: `${i * 80}ms`,
-                        boxShadow: "0 0 10px rgba(184,255,46,0.4)",
-                      }}
-                      title={`+${fmtMoney(m.income)}`}
-                    />
-                    <div
-                      className="w-3 rounded-t-[2px] bg-gradient-to-t from-neon-magenta/20 to-neon-magenta transition-all duration-700 group-hover:brightness-150 sm:w-5"
-                      style={{
-                        height: chartReady ? `${Math.max(2, (m.expense / maxFlow) * 100)}%` : "0%",
-                        transitionDelay: `${i * 80 + 40}ms`,
-                        boxShadow: "0 0 10px rgba(255,46,196,0.4)",
-                      }}
-                      title={`−${fmtMoney(m.expense)}`}
-                    />
-                  </div>
-                  <div className="mt-2 font-mono text-[10px] capitalize text-mute">{m.label}</div>
-                </div>
-              ))}
+            <div className="text-xs">
+              <span className="text-white/40">Расходы</span>
+              <div className="text-sm font-semibold text-rose-400">−{fm(stats.exp)}</div>
             </div>
-          </NeonPanel>
+          </div>
+        </div>
+      </div>
 
-          {/* операции */}
-          <NeonPanel accent="#ff2ec4" className="p-4 sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="font-display text-xs font-bold uppercase tracking-wider">Операции</div>
-              <div className="flex flex-wrap gap-1.5">
-                {(
-                  [
-                    ["all", "Все"],
-                    ["income", "Доходы"],
-                    ["expense", "Расходы"],
-                  ] as const
-                ).map(([id, label]) => (
-                  <button
-                    key={id}
-                    onClick={() => setTxFilter(id)}
-                    className={cx(
-                      "rounded-full border px-2.5 py-1 text-[11px] font-bold transition-all",
-                      txFilter === id
-                        ? "border-neon-cyan/70 bg-neon-cyan/10 text-neon-cyan shadow-[0_0_12px_rgba(0,229,255,0.25)]"
-                        : "border-line text-mute hover:text-ink",
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-                <select
-                  value={catFilter}
-                  onChange={(e) => setCatFilter(Number(e.target.value))}
-                  className="rounded-full border border-line bg-abyss px-2.5 py-1 text-[11px] font-bold text-mute outline-none focus:border-neon-cyan/60"
-                >
-                  <option value={0}>Все категории</option>
-                  {data.categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.icon} {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="mt-2 max-h-[420px] divide-y divide-white/[0.04] overflow-y-auto pr-1">
-              {shownTx.map((t) => (
-                <div key={t.id} className="group flex items-center gap-3 py-2.5">
-                  <div
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-base"
-                    style={{ background: `${t.category.color}1f`, boxShadow: `inset 0 0 0 1px ${t.category.color}44` }}
-                  >
-                    {t.category.icon}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold">{t.note || t.category.name}</div>
-                    <div className="font-mono text-[10px] text-mute">
-                      {t.category.name} · {fmtDateShort(t.date)}
+      {/* Filters */}
+      <div className="px-5 mb-3">
+        <div className="flex gap-1 mb-2">
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => setPeriod(p.key)}
+              className="flex-1 rounded-xl py-2 text-[12px] font-semibold active:scale-95 transition-all"
+              style={period === p.key ? { background: "rgba(0,255,163,0.15)", color: "#00ffa3" } : { background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.4)" }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1">
+          {[{ k: "all", l: "Все", c: "#fff" }, { k: "income", l: "Доходы", c: "#00ffa3" }, { k: "expense", l: "Расходы", c: "#ff2d6f" }].map((f) => (
+            <button
+              key={f.k}
+              onClick={() => setTypeFilter(f.k as any)}
+              className="flex-1 rounded-xl py-2 text-[12px] font-semibold active:scale-95 transition-all"
+              style={typeFilter === f.k ? { background: `${f.c}18`, color: f.c } : { background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.4)" }}
+            >
+              {f.l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Categories */}
+      {stats.cats.length > 0 && (
+        <div className="px-5 mb-4">
+          <div className="rounded-2xl p-4 border border-white/[0.06]" style={{ background: "rgba(255,255,255,0.03)" }}>
+            <div className="text-xs font-semibold text-white/50 mb-3">По категориям</div>
+            <div className="space-y-2.5">
+              {stats.cats.map((c, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <span className="text-base">{c.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between mb-1">
+                      <span className="text-sm text-white/70 truncate">{c.name}</span>
+                      <span className="text-sm font-semibold" style={{ color: c.type === "income" ? "#00ffa3" : "#ff2d6f" }}>
+                        {c.type === "income" ? "+" : "−"}{fm(c.amt)}
+                      </span>
+                    </div>
+                    <div className="h-1 rounded-full bg-white/5">
+                      <div className="h-full rounded-full" style={{ width: `${stats.cats.length > 0 ? (c.amt / Math.max(...stats.cats.map((x) => x.amt))) * 100 : 0}%`, background: c.color }} />
                     </div>
                   </div>
-                  <div
-                    className={cx(
-                      "font-mono text-sm font-bold",
-                      t.type === "income" ? "text-neon-lime" : "text-neon-magenta",
-                    )}
-                  >
-                    {t.type === "income" ? "+" : "−"} {fmtMoney(t.amount)}
-                  </div>
-                  <button
-                    onClick={() => removeTx(t.id)}
-                    aria-label="Удалить операцию"
-                    className="text-mute/40 transition-all hover:text-neon-red sm:opacity-0 sm:group-hover:opacity-100"
-                  >
-                    ✕
-                  </button>
                 </div>
               ))}
-              {shownTx.length === 0 && (
-                <EmptyState title="Ничего не найдено" text="Измените фильтры или добавьте операцию." />
-              )}
             </div>
-          </NeonPanel>
+          </div>
         </div>
+      )}
 
-        {/* правая колонка */}
-        <div className="order-1 space-y-3 sm:space-y-4 lg:order-2">
-          {/* форма */}
-          <NeonPanel
-            accent={type === "income" ? "#b8ff2e" : "#ff2ec4"}
-            glow
-            className={cx("p-4 transition-all sm:p-5", !formOpen && "hidden sm:block")}
-          >
-            <div className="font-display text-xs font-bold uppercase tracking-wider">
-              {formOpen ? "Новая операция" : "Добавить операцию"}
-            </div>
-            <form onSubmit={submit} className="mt-3.5 space-y-3.5">
-              <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-line p-1">
-                {(
-                  [
-                    ["expense", "Расход", "#ff2ec4", ArrowUpRight],
-                    ["income", "Доход", "#b8ff2e", ArrowDownLeft],
-                  ] as const
-                ).map(([id, label, color, Icon]) => (
-                  <button
-                    type="button"
-                    key={id}
-                    onClick={() => setType(id)}
-                    className={cx(
-                      "flex items-center justify-center gap-1.5 rounded-md py-2 text-xs font-bold transition-all",
-                      type === id ? "text-void" : "text-mute hover:text-ink",
-                    )}
-                    style={
-                      type === id
-                        ? { background: color, boxShadow: `0 0 16px ${color}88` }
-                        : undefined
-                    }
-                  >
-                    <Icon size={13} /> {label}
-                  </button>
-                ))}
+      {/* Transactions */}
+      <div className="px-5 pb-28 space-y-3" style={{ overflowY: "auto" }}>
+        {byDay.length === 0 ? (
+          <div className="flex flex-col items-center py-16 text-center">
+            <div className="text-4xl mb-3">💳</div>
+            <div className="text-sm font-medium text-white/50">Нет операций</div>
+          </div>
+        ) : (
+          byDay.map((g) => (
+            <div key={g.date.toISOString()}>
+              <div className="text-xs font-semibold text-white/30 mb-1.5 px-1">
+                {WEEKDAYS[g.date.getDay()]}, {g.date.getDate()} {MONTHS[g.date.getMonth()]}
               </div>
-              <div>
-                <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-mute">
-                  Сумма, ₽
-                </label>
-                <input
-                  inputMode="decimal"
-                  placeholder="0"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className={cx(inputNeon, "font-mono text-lg font-bold")}
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-mute">
-                  Категория
-                </label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {typeCats.map((c) => (
+              <div className="space-y-1.5">
+                {g.items.map((t) => {
+                  const isInc = t.type === "income";
+                  return (
                     <button
-                      type="button"
-                      key={c.id}
-                      onClick={() => setCategoryId(c.id)}
-                      className={cx(
-                        "flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-[11px] font-bold transition-all",
-                        categoryId === c.id
-                          ? "text-ink"
-                          : "border-line text-mute hover:text-ink",
-                      )}
-                      style={
-                        categoryId === c.id
-                          ? {
-                              borderColor: `${c.color}99`,
-                              background: `${c.color}14`,
-                              boxShadow: `0 0 14px ${c.color}33`,
-                            }
-                          : undefined
-                      }
+                      key={t.id}
+                      onClick={() => { setEditing(t); setFormOpen(true); }}
+                      className="w-full flex items-center gap-3 rounded-xl px-4 py-3.5 border border-white/[0.05] active:scale-[0.98] transition-all text-left"
+                      style={{ background: "rgba(255,255,255,0.03)" }}
                     >
-                      <span className="text-sm">{c.icon}</span> {c.name}
+                      <div className="text-lg">
+                        {t.categoryEmoji ?? (isInc ? "📈" : "📉")}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[14px] font-medium text-white truncate">{t.title}</div>
+                        {t.categoryName && <div className="text-[11px] text-white/30 truncate">{t.categoryName}</div>}
+                      </div>
+                      <div className="text-[14px] font-semibold" style={{ color: isInc ? "#00ffa3" : "#ff2d6f" }}>
+                        {isInc ? "+" : "−"}{fm(Number(t.amount))}
+                      </div>
                     </button>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="Комментарий"
-                  className={inputNeon}
-                />
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className={inputNeon}
-                />
-              </div>
-              <Btn type="submit" accent={type === "income" ? "#b8ff2e" : "#ff2ec4"} className="w-full">
-                <Plus size={14} /> Записать
-              </Btn>
-            </form>
-          </NeonPanel>
-
-          {/* структура расходов */}
-          <NeonPanel accent="#ffb020" className="p-4 sm:p-5">
-            <div className="font-display text-xs font-bold uppercase tracking-wider">
-              Структура расходов <span className="text-mute">· месяц</span>
             </div>
-            <div className="mt-3.5 space-y-3">
-              {data.byCategory.map((c) => (
-                <div key={c.id}>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span>{c.icon}</span>
-                    <span className="flex-1 truncate font-semibold">{c.name}</span>
-                    <span className="font-mono font-bold" style={{ color: c.color }}>
-                      {fmtMoney(c.total)}
-                    </span>
-                  </div>
-                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-                    <div
-                      className="h-full rounded-full transition-[width] duration-700"
-                      style={{
-                        width: chartReady ? `${Math.max(2, c.share * 100)}%` : "0%",
-                        background: c.color,
-                        boxShadow: `0 0 8px ${c.color}99`,
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-              {data.byCategory.length === 0 && (
-                <EmptyState title="Расходов нет" text="Отличная новость — в этом месяце вы ничего не потратили." />
-              )}
-            </div>
-          </NeonPanel>
-        </div>
+          ))
+        )}
       </div>
-    </div>
+
+      {/* FAB */}
+      <button
+        onClick={() => { setEditing(null); setFormOpen(true); }}
+        className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] right-4 z-30 h-14 w-14 rounded-2xl flex items-center justify-center shadow-2xl active:scale-90 transition-transform"
+        style={{ background: "#00ffa3", boxShadow: "0 0 24px rgba(0,255,163,0.5), 0 8px 24px rgba(0,0,0,0.4)" }}
+      >
+        <svg viewBox="0 0 24 24" className="h-7 w-7 text-[#000]" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </button>
+
+      {formOpen && (
+        <TransactionForm
+          editing={editing}
+          incomeCategories={incomeCats}
+          expenseCategories={expenseCats}
+          onClose={() => { setFormOpen(false); setEditing(null); }}
+          onSubmit={save}
+          onDelete={editing ? () => { del(editing.id); setFormOpen(false); setEditing(null); } : undefined}
+        />
+      )}
+    </>
   );
+}
+
+function fm(n: number) {
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n);
 }

@@ -1,267 +1,205 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import type { FormEvent } from "react";
-import { Pin, PinOff, Plus, Search, StickyNote } from "lucide-react";
-import {
-  Btn,
-  ColorSwatches,
-  ConfirmDelete,
-  EmptyState,
-  Loader,
-  Modal,
-  NeonPanel,
-  SectionHead,
-  cx,
-  inputNeon,
-} from "./ui";
-import { NEON_COLORS, api, jpatch, jpost, plural } from "@/lib/core";
-import type { Note, SectionProps } from "@/lib/core";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import type { Note } from "@/db/schema";
+import { NoteEditor } from "./NoteEditor";
 
-interface Draft {
-  id?: number;
-  title: string;
-  content: string;
-  color: string;
-  pinned: boolean;
-}
+const NOTE_COLORS = [
+  { name: "Розовый", value: "#ff2d6f" },
+  { name: "Фиолет", value: "#b14dff" },
+  { name: "Голубой", value: "#00d4ff" },
+  { name: "Зелёный", value: "#00ffa3" },
+  { name: "Жёлтый", value: "#ffb020" },
+  { name: "Оранж", value: "#ff6b35" },
+];
 
-const emptyDraft: Draft = {
-  title: "",
-  content: "",
-  color: NEON_COLORS[0],
-  pinned: false,
-};
+export function NotesSection({ initialNotes }: { initialNotes: Note[] }) {
+  const [notes, setNotes] = useState<Note[]>(initialNotes);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editing, setEditing] = useState<Note | null>(null);
+  const [search, setSearch] = useState("");
+  const [delConfirm, setDelConfirm] = useState<number | null>(null);
+  const delTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-export default function NotesSection({ notify, intent, clearIntent }: SectionProps) {
-  const [notes, setNotes] = useState<Note[] | null>(null);
-  const [query, setQuery] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [draft, setDraft] = useState<Draft>(emptyDraft);
-
-  const load = useCallback(async () => {
+  const refresh = useCallback(async () => {
     try {
-      setNotes(await api<Note[]>("/api/notes"));
-    } catch {
-      notify("Не удалось загрузить заметки");
-    }
-  }, [notify]);
+      const res = await fetch("/api/notes");
+      if (res.ok) setNotes(await res.json());
+    } catch {}
+  }, []);
+
+  useEffect(() => { return () => { if (delTimer.current) clearTimeout(delTimer.current); }; }, []);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return notes;
+    const q = search.toLowerCase();
+    return notes.filter((n) => n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q));
+  }, [notes, search]);
+
+  const pinned = filtered.filter((n) => n.pinned);
+  const regular = filtered.filter((n) => !n.pinned);
+
+  function openNew() { setEditing(null); setEditorOpen(true); }
+  function openEdit(n: Note) { setEditing(n); setEditorOpen(true); }
+
+  async function saveNote(data: { title: string; content: string; color: string }, id: number | null) {
+    setEditorOpen(false);
+    try {
+      const url = id ? `/api/notes/${id}` : "/api/notes";
+      const res = await fetch(url, { method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (res.ok) { const n = await res.json(); if (id) setNotes((p) => p.map((x) => x.id === n.id ? n : x)); else setNotes((p) => [n, ...p]); }
+    } catch {}
+  }
+
+  async function delNote(id: number) {
+    setNotes((p) => p.filter((n) => n.id !== id));
+    try { await fetch(`/api/notes/${id}`, { method: "DELETE" }); } catch { refresh(); }
+    setDelConfirm(null);
+  }
+
+  async function togglePin(note: Note) {
+    setNotes((p) => p.map((n) => n.id === note.id ? { ...n, pinned: !n.pinned, updatedAt: new Date() } : n));
+    try { await fetch(`/api/notes/${note.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pinned: !note.pinned }) }); } catch { refresh(); }
+  }
+
+  function handleDel(id: number) {
+    if (delConfirm === id) { if (delTimer.current) clearTimeout(delTimer.current); delNote(id); }
+    else { setDelConfirm(id); delTimer.current = setTimeout(() => setDelConfirm(null), 3000); }
+  }
 
   useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    if (intent === "new-note") {
-      setDraft(emptyDraft);
-      setModalOpen(true);
-      clearIntent();
-    }
-  }, [intent, clearIntent]);
-
-  const save = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!draft.title.trim()) return;
-    try {
-      if (draft.id) {
-        await api("/api/notes", jpatch(draft));
-        notify("Заметка обновлена");
-      } else {
-        await api("/api/notes", jpost(draft));
-        notify("Заметка создана ⚡");
-      }
-      setModalOpen(false);
-      load();
-    } catch (err) {
-      notify(err instanceof Error ? err.message : "Ошибка сохранения");
-    }
-  };
-
-  const togglePin = async (n: Note) => {
-    setNotes((ns) =>
-      ns &&
-        ns
-          .map((x) => (x.id === n.id ? { ...x, pinned: !x.pinned } : x))
-          .sort((a, b) => Number(b.pinned) - Number(a.pinned)),
-    );
-    await api("/api/notes", jpatch({ id: n.id, pinned: !n.pinned }));
-  };
-
-  const remove = async (id: number) => {
-    await api(`/api/notes?id=${id}`, { method: "DELETE" });
-    setNotes((ns) => ns && ns.filter((n) => n.id !== id));
-    notify("Заметка удалена");
-  };
-
-  if (!notes) return <Loader />;
-
-  const q = query.trim().toLowerCase();
-  const shown = notes.filter(
-    (n) => !q || n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q),
-  );
+    document.body.style.overflow = editorOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [editorOpen]);
 
   return (
-    <div>
-      <SectionHead code="04 · NOTES" title="Заметки" accent="#ffb020">
-        <Btn accent="#ffb020" onClick={() => { setDraft(emptyDraft); setModalOpen(true); }}>
-          <Plus size={15} /> Заметка
-        </Btn>
-      </SectionHead>
-
-      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-mute/60" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Поиск по заметкам…"
-            className={cx(inputNeon, "pl-10")}
-          />
+    <>
+      {/* Header */}
+      <div className="px-5 pt-4 pb-1">
+        <div className="flex items-center justify-between">
+          <h1 className="text-[28px] font-bold text-white tracking-tight">Заметки</h1>
+          <button onClick={refresh} className="h-9 w-9 flex items-center justify-center rounded-full active:scale-90 transition-transform">
+            <svg viewBox="0 0 24 24" className="h-5 w-5 text-white/50" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 4v6h-6" /><path d="M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
         </div>
-        <div className="font-mono text-[11px] text-mute sm:pl-4">
-          {shown.length} {plural(shown.length, "запись", "записи", "записей")}
+        <div className="text-sm text-white/40 mt-0.5">{notes.length} {pluralize(notes.length, "заметка", "заметки", "заметок")}</div>
+      </div>
+
+      {/* Search */}
+      <div className="px-5 mb-4">
+        <div className="flex items-center gap-2 rounded-xl px-4 py-2.5 border border-white/[0.08]" style={{ background: "rgba(255,255,255,0.04)" }}>
+          <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/30" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Поиск..."
+            className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/25"
+          />
+          {search && <button onClick={() => setSearch("")} className="text-white/30">✕</button>}
         </div>
       </div>
 
-      {shown.length === 0 ? (
-        <NeonPanel accent="#ffb020" className="p-4">
-          <EmptyState
-            icon={<StickyNote size={32} />}
-            title={q ? "Ничего не найдено" : "Пока нет заметок"}
-            text={q ? "Попробуйте другой запрос." : "Запишите первую мысль — она не потеряется."}
-          />
-        </NeonPanel>
-      ) : (
-        <div className="columns-1 gap-4 sm:columns-2 xl:columns-3">
-          {shown.map((n) => (
-            <NeonPanel
-              key={n.id}
-              accent={n.color}
-              glow
-              className="group relative mb-4 break-inside-avoid overflow-hidden p-4"
-            >
-              <span
-                className="absolute inset-x-0 top-0 h-[3px]"
-                style={{ background: `linear-gradient(90deg, ${n.color}, transparent)`, boxShadow: `0 0 12px ${n.color}88` }}
-              />
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="min-w-0 flex-1 font-display text-[14px] font-bold leading-snug">
-                  {n.title}
-                </h3>
-                <div
-                  className={cx(
-                    "flex shrink-0 items-center gap-1 transition-opacity",
-                    n.pinned ? "opacity-100" : "opacity-100 md:opacity-0 md:group-hover:opacity-100",
-                  )}
-                >
-                  <button
-                    onClick={() => togglePin(n)}
-                    title={n.pinned ? "Открепить" : "Закрепить"}
-                    className={cx(
-                      "flex h-7 w-7 items-center justify-center rounded-md border transition-all active:scale-90",
-                      n.pinned
-                        ? "border-neon-amber/60 bg-neon-amber/10 text-neon-amber"
-                        : "border-transparent text-mute/60 hover:border-line hover:text-neon-amber",
-                    )}
-                  >
-                    {n.pinned ? <Pin size={12} /> : <PinOff size={12} />}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setDraft({ id: n.id, title: n.title, content: n.content, color: n.color, pinned: n.pinned });
-                      setModalOpen(true);
-                    }}
-                    aria-label="Редактировать"
-                    className="flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-mute/60 transition-all hover:border-line hover:text-neon-cyan active:scale-90"
-                  >
-                    ✎
-                  </button>
-                  <ConfirmDelete onConfirm={() => remove(n.id)} className="h-7" />
-                </div>
+      {/* Notes */}
+      <div className="px-5 pb-28 space-y-3" style={{ overflowY: "auto" }}>
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center py-16 text-center">
+            <div className="text-4xl mb-3">📝</div>
+            <div className="text-sm font-medium text-white/50">{search ? "Ничего не найдено" : "Пока нет заметок"}</div>
+          </div>
+        ) : (
+          <>
+            {pinned.length > 0 && <NoteGroup title="📌 Закреплённые" notes={pinned} onEdit={openEdit} onDel={handleDel} onPin={togglePin} delConfirm={delConfirm} />}
+            {regular.length > 0 && <NoteGroup title={pinned.length > 0 ? "Все" : ""} notes={regular} onEdit={openEdit} onDel={handleDel} onPin={togglePin} delConfirm={delConfirm} />}
+          </>
+        )}
+      </div>
+
+      {/* FAB */}
+      <button
+        onClick={openNew}
+        className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] right-4 z-30 h-14 w-14 rounded-2xl flex items-center justify-center shadow-2xl active:scale-90 transition-transform"
+        style={{ background: "#b14dff", boxShadow: "0 0 24px rgba(177,77,255,0.5), 0 8px 24px rgba(0,0,0,0.4)" }}
+      >
+        <svg viewBox="0 0 24 24" className="h-7 w-7 text-[#000]" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </button>
+
+      {editorOpen && (
+        <NoteEditor
+          note={editing}
+          colors={NOTE_COLORS}
+          onClose={() => { setEditorOpen(false); setEditing(null); }}
+          onSubmit={saveNote}
+        />
+      )}
+    </>
+  );
+}
+
+function NoteGroup({
+  title, notes, onEdit, onDel, onPin, delConfirm,
+}: {
+  title: string; notes: Note[];
+  onEdit: (n: Note) => void; onDel: (id: number) => void; onPin: (n: Note) => void; delConfirm: number | null;
+}) {
+  return (
+    <div>
+      {title && <div className="text-xs font-semibold text-white/30 mb-2 px-1">{title}</div>}
+      <div className="space-y-2">
+        {notes.map((n) => (
+          <div
+            key={n.id}
+            className="group relative rounded-2xl border overflow-hidden active:scale-[0.98] transition-all"
+            style={{ borderColor: `${n.color}30`, background: `${n.color}08` }}
+          >
+            {/* Actions overlay */}
+            <div className="absolute right-2 top-2 flex gap-1.5 z-10">
+              <button
+                onClick={(e) => { e.stopPropagation(); onPin(n); }}
+                className="h-8 w-8 rounded-lg flex items-center justify-center text-xs"
+                style={{ background: n.pinned ? `${n.color}30` : "rgba(0,0,0,0.4)" }}
+              >
+                📌
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDel(n.id); }}
+                className="h-8 w-8 rounded-lg flex items-center justify-center text-xs"
+                style={{ background: delConfirm === n.id ? "#ff2d6f" : "rgba(0,0,0,0.4)", color: delConfirm === n.id ? "#fff" : "#fff" }}
+              >
+                {delConfirm === n.id ? "✕" : "🗑️"}
+              </button>
+            </div>
+
+            <button onClick={() => onEdit(n)} className="w-full p-4 text-left">
+              <div className="text-[15px] font-semibold text-white mb-1 pr-16" style={{ textShadow: `0 0 8px ${n.color}50` }}>
+                {n.title}
               </div>
-              {n.content && (
-                <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-mute">
-                  {n.content}
-                </p>
-              )}
-              <div className="mt-3 flex items-center justify-between font-mono text-[9px] uppercase tracking-widest text-mute/60">
-                <span>
+              <div className="text-xs text-white/40 line-clamp-3 leading-relaxed">{n.content}</div>
+              <div className="flex items-center gap-1.5 mt-2">
+                <div className="h-1.5 w-1.5 rounded-full" style={{ background: n.color }} />
+                <span className="text-[10px] text-white/25">
                   {new Date(n.updatedAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}
                 </span>
-                {n.pinned && <span className="text-neon-amber">pinned</span>}
               </div>
-            </NeonPanel>
-          ))}
-        </div>
-      )}
-
-      {/* редактор */}
-      <Modal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={draft.id ? "Редактировать заметку" : "Новая заметка"}
-        accent="#ffb020"
-      >
-        <form onSubmit={save} className="space-y-4">
-          <div>
-            <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-mute">
-              Заголовок *
-            </label>
-            <input
-              autoFocus
-              value={draft.title}
-              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-              placeholder="О чём заметка?"
-              className={inputNeon}
-            />
+            </button>
           </div>
-          <div>
-            <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-mute">
-              Текст
-            </label>
-            <textarea
-              value={draft.content}
-              onChange={(e) => setDraft({ ...draft, content: e.target.value })}
-              rows={7}
-              placeholder="Мысли, списки, планы…"
-              className={cx(inputNeon, "resize-y leading-relaxed")}
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-mute">
-              Цвет
-            </label>
-            <ColorSwatches
-              colors={NEON_COLORS}
-              value={draft.color}
-              onChange={(color) => setDraft({ ...draft, color })}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => setDraft({ ...draft, pinned: !draft.pinned })}
-            className={cx(
-              "flex w-full items-center justify-between rounded-lg border px-3.5 py-2.5 text-sm font-bold transition-all",
-              draft.pinned
-                ? "border-neon-amber/60 bg-neon-amber/10 text-neon-amber shadow-[0_0_16px_rgba(255,176,32,0.2)]"
-                : "border-line text-mute hover:text-ink",
-            )}
-          >
-            <span className="flex items-center gap-2">
-              <Pin size={14} /> Закрепить сверху
-            </span>
-            <span className="font-mono text-[10px]">{draft.pinned ? "ON" : "OFF"}</span>
-          </button>
-          <div className="flex gap-2 pt-1">
-            <Btn type="submit" accent="#ffb020" className="flex-1">
-              {draft.id ? "Сохранить" : "Создать"}
-            </Btn>
-            <Btn type="button" ghost accent="#8b93b8" onClick={() => setModalOpen(false)}>
-              Отмена
-            </Btn>
-          </div>
-        </form>
-      </Modal>
+        ))}
+      </div>
     </div>
   );
+}
+
+// useRef imported at top
+
+function pluralize(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
 }

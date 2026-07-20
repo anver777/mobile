@@ -1,410 +1,283 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import type { FormEvent } from "react";
-import {
-  CalendarDays,
-  Check,
-  Flag,
-  Minus,
-  Pencil,
-  Plus,
-  Zap,
-} from "lucide-react";
-import {
-  Btn,
-  ColorSwatches,
-  ConfirmDelete,
-  EmptyState,
-  Loader,
-  Modal,
-  NeonPanel,
-  ProgressBar,
-  SectionHead,
-  cx,
-  inputNeon,
-} from "./ui";
-import {
-  GOAL_CATEGORIES,
-  NEON_COLORS,
-  api,
-  daysLeft,
-  jpatch,
-  jpost,
-  plural,
-} from "@/lib/core";
-import type { Goal, SectionProps } from "@/lib/core";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Goal } from "@/db/schema";
+import { TIMEFRAME_MAP, periodSubtitle, type TimeframeValue } from "@/lib/timeframes";
+import { GoalSheet, type GoalDraft } from "./GoalSheet";
 
-interface Draft {
-  id?: number;
-  title: string;
-  description: string;
-  category: string;
-  color: string;
-  dueDate: string;
-  progress: number;
-}
+const PERIODS: { key: TimeframeValue; label: string }[] = [
+  { key: "day", label: "День" },
+  { key: "week", label: "Неделя" },
+  { key: "month", label: "Месяц" },
+  { key: "year", label: "Год" },
+];
 
-const emptyDraft: Draft = {
-  title: "",
-  description: "",
-  category: "Личное",
-  color: NEON_COLORS[0],
-  dueDate: "",
-  progress: 0,
-};
+export function GoalsSection({ initialGoals }: { initialGoals: Goal[] }) {
+  const [goals, setGoals] = useState<Goal[]>(initialGoals);
+  const [active, setActive] = useState<TimeframeValue>("day");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [editing, setEditing] = useState<Goal | null>(null);
 
-export default function GoalsSection({ notify, intent, clearIntent }: SectionProps) {
-  const [goals, setGoals] = useState<Goal[] | null>(null);
-  const [filter, setFilter] = useState<"all" | "active" | "done">("all");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const tf = TIMEFRAME_MAP[active];
 
-  const load = useCallback(async () => {
+  const refresh = useCallback(async () => {
     try {
-      setGoals(await api<Goal[]>("/api/goals"));
+      const res = await fetch("/api/goals");
+      if (res.ok) setGoals(await res.json());
+    } catch {}
+  }, []);
+
+  const visible = useMemo(
+    () => goals.filter((g) => g.timeframe === active),
+    [goals, active]
+  );
+  const done = visible.filter((g) => g.completed);
+  const pending = visible.filter((g) => !g.completed);
+  const progress = visible.length ? done.length / visible.length : 0;
+
+  function openNew() { setEditing(null); setSheetOpen(true); }
+  function openEdit(g: Goal) { setEditing(g); setSheetOpen(true); }
+
+  async function toggleGoal(g: Goal) {
+    const next = !g.completed;
+    setGoals((p) => p.map((x) => x.id === g.id ? { ...x, completed: next, updatedAt: new Date() } : x));
+    try {
+      await fetch(`/api/goals/${g.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed: next }),
+      });
     } catch {
-      notify("Не удалось загрузить цели");
+      setGoals((p) => p.map((x) => x.id === g.id ? { ...x, completed: !next } : x));
     }
-  }, [notify]);
+  }
+
+  async function deleteGoal(g: Goal) {
+    setGoals((p) => p.filter((x) => x.id !== g.id));
+    try { await fetch(`/api/goals/${g.id}`, { method: "DELETE" }); } catch { refresh(); }
+  }
+
+  async function submit(d: GoalDraft) {
+    setSheetOpen(false);
+    if (editing) {
+      setGoals((p) => p.map((x) => x.id === editing.id ? { ...x, ...d, notes: d.notes || null, updatedAt: new Date() } : x));
+      try {
+        const res = await fetch(`/api/goals/${editing.id}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(d),
+        });
+        if (res.ok) { const u = await res.json(); setGoals((p) => p.map((x) => x.id === u.id ? u : x)); }
+      } catch { refresh(); }
+    } else {
+      try {
+        const res = await fetch("/api/goals", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(d),
+        });
+        if (res.ok) { const c = await res.json(); setGoals((p) => [...p, c]); setActive(d.timeframe); }
+      } catch {}
+    }
+  }
+
+  const counts = useMemo(() => {
+    const m = { day: 0, week: 0, month: 0, year: 0 };
+    const d = { day: 0, week: 0, month: 0, year: 0 };
+    goals.forEach((g) => { const k = g.timeframe as TimeframeValue; m[k]++; if (g.completed) d[k]++; });
+    return { total: m, done: d };
+  }, [goals]);
 
   useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    if (intent === "new-goal") {
-      setDraft(emptyDraft);
-      setModalOpen(true);
-      clearIntent();
-    }
-  }, [intent, clearIntent]);
-
-  const patchGoal = async (id: number, patch: Record<string, unknown>) => {
-    setGoals((gs) => gs && gs.map((g) => (g.id === id ? { ...g, ...patch } : g)));
-    try {
-      await api("/api/goals", jpatch({ id, ...patch }));
-    } catch {
-      notify("Не удалось сохранить изменение");
-      load();
-    }
-  };
-
-  const bump = (g: Goal, delta: number) => {
-    const progress = Math.min(100, Math.max(0, g.progress + delta));
-    patchGoal(g.id, { progress });
-    if (progress >= 100 && g.progress < 100) notify("Цель достигнута! 🎉");
-  };
-
-  const save = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!draft.title.trim()) return;
-    try {
-      if (draft.id) {
-        await api("/api/goals", jpatch({ ...draft, id: draft.id }));
-        notify("Цель обновлена");
-      } else {
-        await api("/api/goals", jpost({ ...draft }));
-        notify("Цель добавлена ⚡");
-      }
-      setModalOpen(false);
-      load();
-    } catch (err) {
-      notify(err instanceof Error ? err.message : "Ошибка сохранения");
-    }
-  };
-
-  const remove = async (id: number) => {
-    await api(`/api/goals?id=${id}`, { method: "DELETE" });
-    setGoals((gs) => gs && gs.filter((g) => g.id !== id));
-    notify("Цель удалена");
-  };
-
-  if (!goals) return <Loader />;
-
-  const active = goals.filter((g) => !g.completed);
-  const done = goals.filter((g) => g.completed);
-  const avg = active.length
-    ? Math.round(active.reduce((s, g) => s + g.progress, 0) / active.length)
-    : 0;
-  const shown = filter === "all" ? goals : filter === "active" ? active : done;
+    document.body.style.overflow = sheetOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [sheetOpen]);
 
   return (
-    <div>
-      <SectionHead code="02 · GOALS" title="Цели" accent="#ff2ec4">
-        <Btn accent="#ff2ec4" onClick={() => { setDraft(emptyDraft); setModalOpen(true); }}>
-          <Plus size={15} /> Новая цель
-        </Btn>
-      </SectionHead>
-
-      {/* мини-статистика */}
-      <div className="mb-5 grid grid-cols-3 gap-2 sm:gap-3">
-        {[
-          { v: active.length, l: plural(active.length, "активная", "активные", "активных"), c: "#ff2ec4" },
-          { v: done.length, l: plural(done.length, "завершена", "завершены", "завершено"), c: "#b8ff2e" },
-          { v: `${avg}%`, l: "средний прогресс", c: "#00e5ff" },
-        ].map((s, i) => (
-          <NeonPanel key={i} accent={s.c} className="px-3 py-2.5 text-center sm:px-4 sm:py-3">
-            <div className="font-mono text-lg font-bold sm:text-xl" style={{ color: s.c, textShadow: `0 0 14px ${s.c}66` }}>
-              {s.v}
-            </div>
-            <div className="text-[10px] font-semibold text-mute sm:text-[11px]">{s.l}</div>
-          </NeonPanel>
-        ))}
-      </div>
-
-      {/* фильтры */}
-      <div className="mb-4 flex gap-2">
-        {(
-          [
-            ["all", "Все"],
-            ["active", "Активные"],
-            ["done", "Завершённые"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            onClick={() => setFilter(id)}
-            className={cx(
-              "rounded-full border px-3.5 py-1.5 text-xs font-bold transition-all",
-              filter === id
-                ? "border-neon-magenta/70 bg-neon-magenta/10 text-neon-magenta shadow-[0_0_16px_rgba(255,46,196,0.25)]"
-                : "border-line text-mute hover:border-neon-magenta/40 hover:text-ink",
-            )}
-          >
-            {label}
+    <>
+      {/* Header */}
+      <div className="px-5 pt-4 pb-1">
+        <div className="flex items-center justify-between">
+          <h1 className="text-[28px] font-bold text-white tracking-tight">Цели</h1>
+          <button onClick={refresh} className="h-9 w-9 flex items-center justify-center rounded-full active:scale-90 transition-transform">
+            <svg viewBox="0 0 24 24" className="h-5 w-5 text-white/50" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 4v6h-6" /><path d="M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
           </button>
-        ))}
+        </div>
+        <div className="text-sm text-white/40 mt-0.5">{periodSubtitle(active)}</div>
       </div>
 
-      {shown.length === 0 ? (
-        <NeonPanel accent="#ff2ec4" className="p-4">
-          <EmptyState
-            icon={<Flag size={32} />}
-            title={filter === "done" ? "Пока нет завершённых целей" : "Целей нет"}
-            text={filter === "done" ? "Завершите первую — она появится здесь." : "Нажмите «Новая цель» и задайте вектор движения."}
-          />
-        </NeonPanel>
-      ) : (
-        <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
-          {shown.map((g) => {
-            const dl = g.dueDate ? daysLeft(g.dueDate) : null;
-            return (
-              <NeonPanel
-                key={g.id}
-                accent={g.color}
-                glow
-                className={cx("relative overflow-hidden p-4 sm:p-5", g.completed && "opacity-60")}
-              >
-                <span
-                  className="absolute inset-y-0 left-0 w-[3px]"
-                  style={{ background: g.color, boxShadow: `0 0 14px ${g.color}` }}
-                />
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span
-                      className="rounded-full border px-2 py-0.5 text-[10px] font-bold"
-                      style={{ borderColor: `${g.color}55`, color: g.color }}
-                    >
-                      {g.category}
-                    </span>
-                    {!g.completed && dl !== null && (
-                      <span
-                        className={cx(
-                          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-bold",
-                          dl < 0
-                            ? "border-neon-red/60 text-neon-red"
-                            : dl < 7
-                              ? "border-neon-amber/60 text-neon-amber"
-                              : "border-line text-mute",
-                        )}
-                      >
-                        <CalendarDays size={10} />
-                        {dl < 0 ? `просрочено ${-dl} дн.` : `${dl} дн.`}
-                      </span>
-                    )}
-                  </div>
-                  {g.completed && (
-                    <span className="inline-flex items-center gap-1 rounded border border-neon-lime/60 bg-neon-lime/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-widest text-neon-lime">
-                      <Check size={10} /> DONE
-                    </span>
-                  )}
-                </div>
-
-                <h3 className="mt-2.5 font-display text-[15px] font-bold leading-snug">{g.title}</h3>
-                {g.description && (
-                  <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-mute">{g.description}</p>
-                )}
-
-                <div className="mt-4 flex items-center gap-2.5">
-                  <ProgressBar value={g.progress} color={g.color} className="flex-1" />
-                  <span className="w-10 text-right font-mono text-sm font-bold" style={{ color: g.color }}>
-                    {g.progress}%
-                  </span>
-                </div>
-
-                <div className="mt-3.5 flex items-center gap-1.5">
-                  <button
-                    onClick={() => bump(g, -5)}
-                    aria-label="-5%"
-                    className="flex h-8 w-8 items-center justify-center rounded-md border border-line text-mute transition-all hover:border-neon-cyan/50 hover:text-neon-cyan active:scale-90"
-                  >
-                    <Minus size={13} />
-                  </button>
-                  <button
-                    onClick={() => bump(g, +5)}
-                    aria-label="+5%"
-                    className="flex h-8 w-8 items-center justify-center rounded-md border border-line text-mute transition-all hover:border-neon-lime/50 hover:text-neon-lime active:scale-90"
-                  >
-                    <Plus size={13} />
-                  </button>
-                  <button
-                    onClick={() => bump(g, 100)}
-                    title="Быстрый буст до 100%"
-                    className="flex h-8 items-center gap-1 rounded-md border border-line px-2 font-mono text-[10px] font-bold text-mute transition-all hover:border-neon-amber/50 hover:text-neon-amber active:scale-95"
-                  >
-                    <Zap size={11} /> MAX
-                  </button>
-                  <div className="flex-1" />
-                  <button
-                    onClick={() => patchGoal(g.id, { completed: !g.completed })}
-                    title={g.completed ? "Вернуть в работу" : "Отметить выполненной"}
-                    className={cx(
-                      "flex h-8 w-8 items-center justify-center rounded-md border transition-all active:scale-90",
-                      g.completed
-                        ? "border-neon-lime/60 bg-neon-lime/10 text-neon-lime"
-                        : "border-line text-mute hover:border-neon-lime/50 hover:text-neon-lime",
-                    )}
-                  >
-                    <Check size={14} />
-                  </button>
-                  <button
-                    onClick={() => {
-                      setDraft({
-                        id: g.id,
-                        title: g.title,
-                        description: g.description ?? "",
-                        category: g.category,
-                        color: g.color,
-                        dueDate: g.dueDate ?? "",
-                        progress: g.progress,
-                      });
-                      setModalOpen(true);
-                    }}
-                    aria-label="Редактировать"
-                    className="flex h-8 w-8 items-center justify-center rounded-md border border-line text-mute transition-all hover:border-neon-cyan/50 hover:text-neon-cyan active:scale-90"
-                  >
-                    <Pencil size={13} />
-                  </button>
-                  <ConfirmDelete onConfirm={() => remove(g.id)} />
-                </div>
-              </NeonPanel>
-            );
-          })}
+      {/* Progress */}
+      {visible.length > 0 && (
+        <div className="px-5 mb-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-white/60">
+              {done.length} из {visible.length}
+            </span>
+            <span className="text-sm font-bold" style={{ color: tf.accent }}>
+              {Math.round(progress * 100)}%
+            </span>
+          </div>
+          <div className="h-1.5 rounded-full bg-white/8 overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-700"
+              style={{ width: `${progress * 100}%`, background: tf.accent, boxShadow: `0 0 8px ${tf.accent}` }}
+            />
+          </div>
         </div>
       )}
 
-      {/* ── Модалка создания / редактирования ── */}
-      <Modal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={draft.id ? "Редактировать цель" : "Новая цель"}
-        accent="#ff2ec4"
+      {/* Period tabs */}
+      <div className="px-5 mb-3">
+        <div className="flex gap-1.5">
+          {PERIODS.map((p) => {
+            const isA = active === p.key;
+            const t = counts.total[p.key];
+            return (
+              <button
+                key={p.key}
+                onClick={() => setActive(p.key)}
+                className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold transition-all active:scale-95 relative"
+                style={
+                  isA
+                    ? { background: `${tf.accent}20`, color: tf.accent, boxShadow: `0 0 12px ${tf.accent}30` }
+                    : { background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.4)" }
+                }
+              >
+                {p.label}
+                {t > 0 && (
+                  <span className={`absolute -top-1 -right-1 text-[9px] font-bold px-1 rounded-full ${isA ? "text-[#000]" : "text-white/50"}`} style={{ background: isA ? tf.accent : "rgba(255,255,255,0.1)" }}>
+                    {counts.done[p.key]}/{t}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="px-5 pb-28 space-y-2" style={{ minHeight: 0, overflowY: "auto" }}>
+        {visible.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="text-5xl mb-4">{tf.icon}</div>
+            <div className="text-lg font-semibold text-white">Пока нет целей</div>
+            <div className="text-sm text-white/40 mt-1 max-w-[200px]">Нажмите + чтобы добавить</div>
+          </div>
+        ) : (
+          <>
+            {pending.map((g, i) => (
+              <GoalCard key={g.id} goal={g} tf={tf} onToggle={toggleGoal} onEdit={openEdit} onDelete={deleteGoal} delay={i * 40} />
+            ))}
+            {done.length > 0 && (
+              <>
+                <div className="flex items-center gap-3 py-3">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-white/25">Выполнено</span>
+                  <div className="h-px flex-1 bg-white/8" />
+                </div>
+                {done.map((g, i) => (
+                  <GoalCard key={g.id} goal={g} tf={tf} onToggle={toggleGoal} onEdit={openEdit} onDelete={deleteGoal} delay={i * 30} />
+                ))}
+              </>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* FAB */}
+      <button
+        onClick={openNew}
+        className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] right-4 z-30 h-14 w-14 rounded-2xl flex items-center justify-center shadow-2xl active:scale-90 transition-transform"
+        style={{
+          background: tf.accent,
+          boxShadow: `0 0 24px ${tf.accent}60, 0 8px 24px rgba(0,0,0,0.4)`,
+        }}
       >
-        <form onSubmit={save} className="space-y-4">
-          <div>
-            <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-mute">
-              Название *
-            </label>
-            <input
-              autoFocus
-              value={draft.title}
-              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-              placeholder="Например: Пробежать 10 км"
-              className={inputNeon}
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-mute">
-              Описание
-            </label>
-            <textarea
-              value={draft.description}
-              onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-              rows={2}
-              placeholder="План, шаги, мотивация…"
-              className={cx(inputNeon, "resize-none")}
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-mute">
-              Категория
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {GOAL_CATEGORIES.map((c) => (
-                <button
-                  type="button"
-                  key={c}
-                  onClick={() => setDraft({ ...draft, category: c })}
-                  className={cx(
-                    "rounded-full border px-3 py-1.5 text-xs font-bold transition-all",
-                    draft.category === c
-                      ? "border-neon-magenta/70 bg-neon-magenta/10 text-neon-magenta shadow-[0_0_14px_rgba(255,46,196,0.25)]"
-                      : "border-line text-mute hover:text-ink",
-                  )}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-mute">
-              Цвет
-            </label>
-            <ColorSwatches
-              colors={NEON_COLORS}
-              value={draft.color}
-              onChange={(color) => setDraft({ ...draft, color })}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-mute">
-                Дедлайн
-              </label>
-              <input
-                type="date"
-                value={draft.dueDate}
-                onChange={(e) => setDraft({ ...draft, dueDate: e.target.value })}
-                className={inputNeon}
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-mute">
-                Прогресс: <span className="text-neon-cyan">{draft.progress}%</span>
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={5}
-                value={draft.progress}
-                onChange={(e) => setDraft({ ...draft, progress: Number(e.target.value) })}
-                className="range-neon mt-2.5 w-full"
-              />
-            </div>
-          </div>
-          <div className="flex gap-2 pt-1">
-            <Btn type="submit" accent="#ff2ec4" className="flex-1">
-              {draft.id ? "Сохранить" : "Создать цель"}
-            </Btn>
-            <Btn type="button" ghost accent="#8b93b8" onClick={() => setModalOpen(false)}>
-              Отмена
-            </Btn>
-          </div>
-        </form>
-      </Modal>
+        <svg viewBox="0 0 24 24" className="h-7 w-7 text-[#000]" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </button>
+
+      <GoalSheet
+        open={sheetOpen}
+        editing={editing}
+        defaultTimeframe={active}
+        tf={tf}
+        onClose={() => { setSheetOpen(false); setEditing(null); }}
+        onSubmit={submit}
+      />
+    </>
+  );
+}
+
+function GoalCard({
+  goal, tf, onToggle, onEdit, onDelete, delay,
+}: {
+  goal: Goal;
+  tf: typeof TIMEFRAME_MAP[keyof typeof TIMEFRAME_MAP];
+  onToggle: (g: Goal) => void;
+  onEdit: (g: Goal) => void;
+  onDelete: (g: Goal) => void;
+  delay: number;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => { return () => { if (timer.current) clearTimeout(timer.current); }; }, []);
+
+  function handleDelete() {
+    if (confirming) { if (timer.current) clearTimeout(timer.current); onDelete(goal); }
+    else { setConfirming(true); timer.current = setTimeout(() => setConfirming(false), 3000); }
+  }
+
+  return (
+    <div
+      className="flex items-center gap-3 rounded-2xl px-4 py-3.5 border border-white/[0.06] transition-all active:scale-[0.98]"
+      style={{ background: "rgba(255,255,255,0.03)", animation: "slideInUp 0.35s ease both", animationDelay: `${delay}ms` }}
+    >
+      {/* Check */}
+      <button
+        onClick={() => onToggle(goal)}
+        className="h-12 w-12 flex-shrink-0 flex items-center justify-center rounded-xl transition-all active:scale-80"
+        style={{
+          background: goal.completed ? `${tf.accent}20` : "rgba(255,255,255,0.05)",
+          border: `1.5px solid ${goal.completed ? tf.accent : "rgba(255,255,255,0.15)"}`,
+        }}
+      >
+        <svg viewBox="0 0 24 24" className={`h-6 w-6 transition-all ${goal.completed ? "scale-100 opacity-100" : "scale-50 opacity-0"}`} fill="none" stroke={tf.accent} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      </button>
+
+      {/* Text */}
+      <button onClick={() => onEdit(goal)} className="flex-1 min-w-0 text-left">
+        <div className="flex items-center gap-2">
+          <span className="text-base">{goal.emoji}</span>
+          <span className="text-[15px] font-medium truncate" style={{ color: goal.completed ? "rgba(255,255,255,0.3)" : "#fff", textDecoration: goal.completed ? "line-through" : "none" }}>
+            {goal.title}
+          </span>
+        </div>
+        {goal.notes && (
+          <div className="text-xs text-white/30 mt-0.5 truncate">{goal.notes}</div>
+        )}
+      </button>
+
+      {/* Delete */}
+      <button
+        onClick={handleDelete}
+        className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-xl active:scale-80 transition-all"
+        style={{ background: confirming ? "#ff2d6f" : "transparent" }}
+      >
+        {confirming ? (
+          <span className="text-[10px] font-bold text-[#000]">✕</span>
+        ) : (
+          <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          </svg>
+        )}
+      </button>
     </div>
   );
 }
+
+// React imported at top via "use client"
