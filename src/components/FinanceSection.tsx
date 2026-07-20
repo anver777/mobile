@@ -418,22 +418,18 @@ export function FinanceSection({ initialTransactions, initialCategories }: Finan
           setEditingTxn(null);
           setShowForm(true);
         }}
-        className="fixed bottom-28 right-4 z-30 flex items-center gap-2 rounded-full text-[15px] font-bold text-[#05050f] shadow-2xl transition-all hover:scale-105 active:scale-90"
+        className="fixed bottom-28 right-4 z-30 flex items-center justify-center rounded-full text-[#05050f] shadow-2xl transition-all active:scale-90"
         style={{
+          width: "48px",
+          height: "48px",
           background: "#00ffa3",
-          boxShadow: "0 0 32px rgba(0,255,163,0.7), 0 10px 30px rgba(0,0,0,0.4)",
+          boxShadow: "0 0 20px rgba(0,255,163,0.6), 0 6px 20px rgba(0,0,0,0.4)",
           animation: "fabIn 0.4s ease",
-          paddingLeft: "1.5rem",
-          paddingRight: "1.75rem",
-          paddingTop: "1rem",
-          paddingBottom: "1rem",
-          minHeight: "56px",
         }}
       >
         <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
           <path d="M12 5v14M5 12h14" />
         </svg>
-        <span>Добавить</span>
       </button>
 
       {showForm && (

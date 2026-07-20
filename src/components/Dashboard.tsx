@@ -50,11 +50,10 @@ export function Dashboard({ goals, transactions, notes, onNavigate }: DashboardP
   return (
     <div className="px-4 pt-8">
       {/* Header */}
-      <header className="mb-6">
-        <h1 className="text-3xl font-extrabold text-white" style={{ textShadow: "0 0 20px rgba(255,255,255,0.3)" }}>
-          Добро пожаловать 👋
+      <header className="mb-5">
+        <h1 className="text-2xl font-extrabold text-white" style={{ textShadow: "0 0 20px rgba(255,255,255,0.3)" }}>
+          📊 Обзор
         </h1>
-        <p className="mt-1 text-sm text-white/50">Ваша личная статистика</p>
       </header>
 
       {/* Stats cards */}
