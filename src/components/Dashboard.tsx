@@ -17,178 +17,161 @@ interface DashboardData {
   notes: { total: number };
 }
 
+const MONTHS = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
+const WEEKDAYS = ["Воскресенье","Понедельник","Вторник","Среда","Четверг","Пятница","Суббота"];
+
 export function Dashboard({ goals, transactions, notes, onNavigate }: DashboardProps) {
   const [data, setData] = useState<DashboardData | null>(null);
 
   useEffect(() => {
-    async function fetchDashboard() {
-      try {
-        const res = await fetch("/api/dashboard");
-        if (!res.ok) throw new Error();
-        const json = await res.json();
-        setData(json);
-      } catch (error) {
-        console.error("Failed to fetch dashboard:", error);
-      }
-    }
-    fetchDashboard();
+    fetch("/api/dashboard")
+      .then((r) => r.json())
+      .then(setData)
+      .catch(() => {});
   }, [goals.length, transactions.length, notes.length]);
+
+  const now = new Date();
+  const todayStr = `${WEEKDAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]}`;
 
   if (!data) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <div className="text-white/50">Загрузка...</div>
+        <div className="text-white/40">Загрузка...</div>
       </div>
     );
   }
 
   const goalsProgress = data.goals.total > 0 ? (data.goals.completed / data.goals.total) * 100 : 0;
-  const todayProgress = data.goals.todayTotal > 0 ? (data.goals.todayCompleted / data.goals.todayTotal) * 100 : 0;
   const balance = parseFloat(data.finance.totalIncome) - parseFloat(data.finance.totalExpense);
   const monthBalance = parseFloat(data.finance.monthIncome) - parseFloat(data.finance.monthExpense);
 
   return (
-    <div className="px-4 pt-8">
-      {/* Header */}
-      <header className="mb-5">
-        <h1 className="text-2xl font-extrabold text-white" style={{ textShadow: "0 0 20px rgba(255,255,255,0.3)" }}>
-          📊 Обзор
-        </h1>
-      </header>
-
-      {/* Stats cards */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        {/* Goals card */}
-        <button
-          onClick={() => onNavigate("goals")}
-          className="rounded-2xl border border-[rgba(255,45,111,0.3)] bg-[rgba(255,45,111,0.08)] p-4 text-left transition-all hover:scale-105 active:scale-95"
-          style={{ boxShadow: "0 0 20px rgba(255,45,111,0.15)" }}
-        >
-          <div className="text-2xl mb-2">🎯</div>
-          <div className="text-xs text-white/50 mb-1">Цели</div>
-          <div className="text-2xl font-bold text-[#ff2d6f]" style={{ textShadow: "0 0 10px rgba(255,45,111,0.5)" }}>
-            {data.goals.completed}/{data.goals.total}
-          </div>
-          <div className="mt-2 h-1 rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-[#ff2d6f]"
-              style={{ width: `${goalsProgress}%`, boxShadow: "0 0 8px rgba(255,45,111,0.6)" }}
-            />
-          </div>
-        </button>
-
-        {/* Today goals card */}
-        <button
-          onClick={() => onNavigate("goals")}
-          className="rounded-2xl border border-[rgba(177,77,255,0.3)] bg-[rgba(177,77,255,0.08)] p-4 text-left transition-all hover:scale-105 active:scale-95"
-          style={{ boxShadow: "0 0 20px rgba(177,77,255,0.15)" }}
-        >
-          <div className="text-2xl mb-2">☀️</div>
-          <div className="text-xs text-white/50 mb-1">Сегодня</div>
-          <div className="text-2xl font-bold text-[#b14dff]" style={{ textShadow: "0 0 10px rgba(177,77,255,0.5)" }}>
-            {data.goals.todayCompleted}/{data.goals.todayTotal}
-          </div>
-          <div className="mt-2 h-1 rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-[#b14dff]"
-              style={{ width: `${todayProgress}%`, boxShadow: "0 0 8px rgba(177,77,255,0.6)" }}
-            />
-          </div>
-        </button>
-
-        {/* Balance card */}
-        <button
-          onClick={() => onNavigate("finance")}
-          className={`rounded-2xl border p-4 text-left transition-all hover:scale-105 active:scale-95`}
-          style={{
-            borderColor: balance >= 0 ? "rgba(0,255,163,0.3)" : "rgba(255,45,111,0.3)",
-            background: balance >= 0 ? "rgba(0,255,163,0.08)" : "rgba(255,45,111,0.08)",
-            boxShadow: `0 0 20px ${balance >= 0 ? "rgba(0,255,163,0.15)" : "rgba(255,45,111,0.15)"}`,
-          }}
-        >
-          <div className="text-2xl mb-2">💳</div>
-          <div className="text-xs text-white/50 mb-1">Баланс</div>
-          <div
-            className="text-2xl font-bold"
-            style={{
-              color: balance >= 0 ? "#00ffa3" : "#ff2d6f",
-              textShadow: `0 0 10px ${balance >= 0 ? "rgba(0,255,163,0.5)" : "rgba(255,45,111,0.5)"}`,
-            }}
-          >
-            {balance >= 0 ? "+" : ""}
-            {balance.toFixed(0)}
-          </div>
-          <div className="text-[10px] text-white/30 mt-1">Всё время</div>
-        </button>
-
-        {/* Month balance card */}
-        <button
-          onClick={() => onNavigate("finance")}
-          className={`rounded-2xl border p-4 text-left transition-all hover:scale-105 active:scale-95`}
-          style={{
-            borderColor: monthBalance >= 0 ? "rgba(0,212,255,0.3)" : "rgba(255,107,53,0.3)",
-            background: monthBalance >= 0 ? "rgba(0,212,255,0.08)" : "rgba(255,107,53,0.08)",
-            boxShadow: `0 0 20px ${monthBalance >= 0 ? "rgba(0,212,255,0.15)" : "rgba(255,107,53,0.15)"}`,
-          }}
-        >
-          <div className="text-2xl mb-2">📅</div>
-          <div className="text-xs text-white/50 mb-1">Месяц</div>
-          <div
-            className="text-2xl font-bold"
-            style={{
-              color: monthBalance >= 0 ? "#00d4ff" : "#ff6b35",
-              textShadow: `0 0 10px ${monthBalance >= 0 ? "rgba(0,212,255,0.5)" : "rgba(255,107,53,0.5)"}`,
-            }}
-          >
-            {monthBalance >= 0 ? "+" : ""}
-            {monthBalance.toFixed(0)}
-          </div>
-          <div className="text-[10px] text-white/30 mt-1">Этот месяц</div>
-        </button>
+    <div className="overflow-y-auto" style={{ height: "100dvh", paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}>
+      {/* Greeting */}
+      <div className="px-5 pt-4 pb-2">
+        <div className="text-sm text-white/40">{todayStr}</div>
+        <h1 className="mt-1 text-[28px] font-bold text-white tracking-tight">LifeOS</h1>
       </div>
 
-      {/* Quick actions */}
-      <div className="mb-6">
-        <h2 className="text-lg font-bold text-white mb-3" style={{ textShadow: "0 0 12px rgba(255,255,255,0.2)" }}>
-          Быстрые действия
-        </h2>
-        <div className="grid grid-cols-4 gap-2">
-          <QuickAction icon="➕" label="Цель" onClick={() => onNavigate("goals")} />
-          <QuickAction icon="💸" label="Расход" onClick={() => onNavigate("finance")} />
-          <QuickAction icon="💰" label="Доход" onClick={() => onNavigate("finance")} />
-          <QuickAction icon="📝" label="Заметка" onClick={() => onNavigate("notes")} />
+      {/* Main stat — balance */}
+      <div className="px-5 mb-4">
+        <div
+          className="rounded-3xl p-5 relative overflow-hidden"
+          style={{
+            background: `linear-gradient(135deg, ${balance >= 0 ? "#0a2e22" : "#2e0a15"}, #0a0a14)`,
+            border: `1px solid ${balance >= 0 ? "rgba(0,255,163,0.2)" : "rgba(255,45,111,0.2)"}`,
+          }}
+        >
+          <div className="text-xs font-medium text-white/50 mb-1">Общий баланс</div>
+          <div className="text-[34px] font-extrabold tracking-tight" style={{ color: balance >= 0 ? "#00ffa3" : "#ff2d6f" }}>
+            {balance >= 0 ? "+" : "−"}{formatMoney(Math.abs(balance))}
+          </div>
+          <div className="flex items-center gap-3 mt-3">
+            <div className="flex items-center gap-1.5">
+              <div className="h-2 w-2 rounded-full bg-emerald-400" />
+              <span className="text-xs text-emerald-400/80">
+                +{formatMoney(parseFloat(data.finance.monthIncome))}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-2 w-2 rounded-full bg-rose-400" />
+              <span className="text-xs text-rose-400/80">
+                −{formatMoney(parseFloat(data.finance.monthExpense))}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Notes preview */}
-      {notes.length > 0 && (
-        <div className="mb-6">
+      {/* Quick stats row */}
+      <div className="px-5 mb-4">
+        <div className="grid grid-cols-2 gap-3">
+          <StatCard
+            icon="🎯"
+            value={`${data.goals.completed}/${data.goals.total}`}
+            label="Цели"
+            accent="#b14dff"
+            sublabel={data.goals.todayTotal > 0 ? `Сегодня: ${data.goals.todayCompleted}/${data.goals.todayTotal}` : undefined}
+            onClick={() => onNavigate("goals")}
+          />
+          <StatCard
+            icon="📝"
+            value={String(data.notes.total)}
+            label="Заметки"
+            accent="#00d4ff"
+            onClick={() => onNavigate("notes")}
+          />
+        </div>
+      </div>
+
+      {/* Month progress */}
+      <div className="px-5 mb-4">
+        <div
+          className="rounded-2xl p-4 border border-white/[0.08]"
+          style={{ background: "rgba(255,255,255,0.03)" }}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-semibold text-white">Прогресс целей</span>
+            <span className="text-sm font-bold" style={{ color: "#b14dff" }}>{Math.round(goalsProgress)}%</span>
+          </div>
+          <div className="h-2 rounded-full bg-white/8 overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-700"
+              style={{ width: `${goalsProgress}%`, background: "linear-gradient(90deg, #b14dff, #00d4ff)" }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Quick actions */}
+      <div className="px-5 mb-6">
+        <div className="text-sm font-semibold text-white/70 mb-3">Быстрые действия</div>
+        <div className="grid grid-cols-4 gap-2">
+          <QuickBtn icon="➕" label="Цель" color="#ff2d6f" onClick={() => onNavigate("goals")} />
+          <QuickBtn icon="📉" label="Расход" color="#ff6b35" onClick={() => { onNavigate("finance"); }} />
+          <QuickBtn icon="📈" label="Доход" color="#00ffa3" onClick={() => { onNavigate("finance"); }} />
+          <QuickBtn icon="✏️" label="Заметка" color="#b14dff" onClick={() => onNavigate("notes")} />
+        </div>
+      </div>
+
+      {/* Recent transactions */}
+      {transactions.length > 0 && (
+        <div className="px-5 mb-6">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold text-white" style={{ textShadow: "0 0 12px rgba(255,255,255,0.2)" }}>
-              Последние заметки
-            </h2>
-            <button onClick={() => onNavigate("notes")} className="text-xs text-[#ff2d6f] font-semibold">
+            <span className="text-sm font-semibold text-white/70">Последние операции</span>
+            <button
+              onClick={() => onNavigate("finance")}
+              className="text-xs font-semibold"
+              style={{ color: "#00ffa3" }}
+            >
               Все →
             </button>
           </div>
           <div className="space-y-2">
-            {notes.slice(0, 3).map((note) => (
-              <div
-                key={note.id}
-                className="rounded-xl border border-white/10 bg-white/5 p-3 backdrop-blur-sm"
-              >
-                <div className="flex items-start gap-2">
+            {transactions.slice(0, 5).map((txn) => {
+              const isIn = txn.type === "income";
+              return (
+                <div
+                  key={txn.id}
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3 border border-white/[0.06]"
+                  style={{ background: "rgba(255,255,255,0.03)" }}
+                >
+                  <div className="text-lg">
+                    {isIn ? "📈" : "📉"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-white truncate">{txn.title}</div>
+                    <div className="text-xs text-white/30">{formatDate(txn.occurredOn)}</div>
+                  </div>
                   <div
-                    className="h-2 w-2 rounded-full mt-1.5 shrink-0"
-                    style={{ background: note.color, boxShadow: `0 0 6px ${note.color}` }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold text-white truncate">{note.title}</div>
-                    <div className="text-xs text-white/40 line-clamp-2 mt-0.5">{note.content}</div>
+                    className="text-sm font-bold"
+                    style={{ color: isIn ? "#00ffa3" : "#ff2d6f" }}
+                  >
+                    {isIn ? "+" : "−"}{formatMoney(Number(txn.amount))}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -196,14 +179,48 @@ export function Dashboard({ goals, transactions, notes, onNavigate }: DashboardP
   );
 }
 
-function QuickAction({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
+function StatCard({
+  icon, value, label, accent, sublabel, onClick,
+}: {
+  icon: string; value: string; label: string; accent: string;
+  sublabel?: string; onClick: () => void;
+}) {
   return (
     <button
       onClick={onClick}
-      className="flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/5 py-3 transition-all hover:scale-105 active:scale-95"
+      className="rounded-2xl p-4 text-left border border-white/[0.08] transition-all active:scale-95"
+      style={{ background: "rgba(255,255,255,0.03)" }}
     >
-      <span className="text-2xl">{icon}</span>
-      <span className="text-[10px] font-semibold text-white/60">{label}</span>
+      <div className="text-2xl mb-2">{icon}</div>
+      <div className="text-xl font-bold text-white">{value}</div>
+      <div className="text-xs text-white/40 mt-0.5">{label}</div>
+      {sublabel && <div className="text-[10px] mt-1" style={{ color: accent }}>{sublabel}</div>}
     </button>
   );
+}
+
+function QuickBtn({ icon, label, color, onClick }: {
+  icon: string; label: string; color: string; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center justify-center rounded-2xl py-3 border border-white/[0.06] transition-all active:scale-90"
+      style={{ background: `${color}10` }}
+    >
+      <span className="text-2xl mb-1">{icon}</span>
+      <span className="text-[11px] font-medium" style={{ color }}>{label}</span>
+    </button>
+  );
+}
+
+function formatMoney(n: number): string {
+  return new Intl.NumberFormat("ru-RU", {
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function formatDate(d: Date | string): string {
+  const date = typeof d === "string" ? new Date(d) : d;
+  return `${date.getDate()} ${MONTHS[date.getMonth()]}`;
 }

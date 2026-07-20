@@ -1,17 +1,10 @@
+"use client";
+
 import { useEffect, useState } from "react";
 import type { Goal } from "@/db/schema";
-import {
-  TIMEFRAMES,
-  type TimeframeValue,
-  type TimeframeConfig,
-} from "@/lib/timeframes";
+import { TIMEFRAMES, type TimeframeValue } from "@/lib/timeframes";
 
-const EMOJIS = [
-  "🎯", "💪", "📚", "🏃", "🧘", "💧", "🥗", "😴",
-  "💼", "💰", "✍️", "🎨", "🎸", "🧠", "❤️", "🌱",
-  "🏆", "🔥", "⭐", "🚀", "📖", "💻", "🏋️", "🚴",
-  "🍎", "🥦", "🧹", "📅", "🗣️", "🌍", "✈️", "🎓",
-];
+const EMOJIS = ["🎯","💪","📚","🏃","🧘","💧","🥗","😴","💼","💰","✍️","🎨","🎸","🧠","❤️","🌱","🏆","🔥","⭐","🚀","📖","💻","🏋️","🚴","🍎","🥦","🧹","📅","🗣️","🌍","✈️","🎓"];
 
 export interface GoalDraft {
   title: string;
@@ -24,19 +17,12 @@ interface GoalSheetProps {
   open: boolean;
   editing: Goal | null;
   defaultTimeframe: TimeframeValue;
-  tf: TimeframeConfig;
+  tf: { accent: string; glowRgb: string; label: string; icon: string };
   onClose: () => void;
   onSubmit: (draft: GoalDraft) => void;
 }
 
-export function GoalSheet({
-  open,
-  editing,
-  defaultTimeframe,
-  tf,
-  onClose,
-  onSubmit,
-}: GoalSheetProps) {
+export function GoalSheet({ open, editing, defaultTimeframe, tf, onClose, onSubmit }: GoalSheetProps) {
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [emoji, setEmoji] = useState("🎯");
@@ -50,18 +36,13 @@ export function GoalSheet({
         setEmoji(editing.emoji);
         setTimeframe(editing.timeframe as TimeframeValue);
       } else {
-        setTitle("");
-        setNotes("");
-        setEmoji("🎯");
-        setTimeframe(defaultTimeframe);
+        setTitle(""); setNotes(""); setEmoji("🎯"); setTimeframe(defaultTimeframe);
       }
     }
   }, [open, editing, defaultTimeframe]);
 
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
     if (open) window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
@@ -69,187 +50,97 @@ export function GoalSheet({
   if (!open) return null;
 
   const valid = title.trim().length > 0;
-  const glowMed = `rgba(${tf.glowRgb},0.5)`;
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!valid) return;
-    onSubmit({ title: title.trim(), notes: notes.trim(), emoji, timeframe });
-  }
-
-  const inputClass =
-    "min-w-0 flex-1 rounded-2xl border bg-[rgba(255,255,255,0.04)] px-4 py-3.5 text-[15px] font-medium text-slate-50 outline-none transition-colors placeholder:text-slate-500 focus:bg-[rgba(255,255,255,0.07)]";
 
   return (
     <div className="fixed inset-0 z-50">
-      {/* backdrop */}
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div
-        className="absolute inset-0 bg-[#04040c]/80 backdrop-blur-md"
-        onClick={onClose}
-      />
-
-      {/* sheet */}
-      <form
-        onSubmit={handleSubmit}
-        className="absolute inset-x-0 bottom-0 mx-auto max-w-2xl max-h-[92%] overflow-y-auto rounded-t-[28px] border-t border-[rgba(255,255,255,0.08)] bg-[#0a0a18]/95 px-5 pb-8 pt-3 backdrop-blur-xl sm:pb-8"
-        style={{
-          animation: "sheetUp 0.32s cubic-bezier(0.16,1,0.3,1)",
-          boxShadow: `0 -20px 60px rgba(0,0,0,0.6), 0 -2px 30px ${glowMed}`,
-        }}
+        className="absolute inset-x-0 bottom-0 mx-auto max-w-lg max-h-[90%] overflow-y-auto rounded-t-3xl bg-[#0c0c18] border-t border-white/[0.08]"
+        style={{ animation: "sheetUp 0.3s ease" }}
       >
-        <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-white/20" />
-
-        <div className="mb-5 flex items-center justify-between">
-          <h2
-            className="text-lg font-bold text-white"
-            style={{ textShadow: `0 0 16px ${glowMed}` }}
-          >
-            {editing ? "Редактировать цель" : "Новая цель"}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-slate-300 transition-colors hover:bg-white/20"
-            aria-label="Закрыть"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-            >
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </button>
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-2">
+          <div className="h-1 w-10 rounded-full bg-white/20" />
         </div>
 
-        {/* emoji + title */}
-        <div className="mb-4 flex items-center gap-3">
-          <div
-            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[rgba(255,255,255,0.05)] text-3xl ring-1 ring-[rgba(255,255,255,0.1)]"
-            style={{ boxShadow: `0 0 18px rgba(${tf.glowRgb},0.25)` }}
-          >
-            {emoji}
+        <div className="px-5 pb-6">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-lg font-bold text-white">{editing ? "Изменить" : "Новая цель"}</h2>
+            <button onClick={onClose} className="h-9 w-9 flex items-center justify-center rounded-full bg-white/10 text-white/60">✕</button>
           </div>
-          <input
-            autoFocus
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Что хотите достичь?"
-            className={inputClass}
-            style={{ borderColor: "rgba(255,255,255,0.1)" }}
-          />
-        </div>
 
-        {/* emoji picker */}
-        <div className="mb-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Иконка
-          </p>
-          <div className="grid grid-cols-8 gap-1.5">
-            {EMOJIS.map((em) => {
-              const active = emoji === em;
-              return (
+          {/* Emoji + Title */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-14 w-14 rounded-2xl bg-white/5 flex items-center justify-center text-3xl shrink-0" style={{ border: `1px solid rgba(${tf.glowRgb},0.2)` }}>
+              {emoji}
+            </div>
+            <input
+              autoFocus value={title} onChange={(e) => setTitle(e.target.value)}
+              placeholder="Что хотите достичь?"
+              className="flex-1 rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30"
+            />
+          </div>
+
+          {/* Emoji picker */}
+          <div className="mb-4">
+            <div className="text-xs font-semibold text-white/30 mb-2 uppercase tracking-wider">Иконка</div>
+            <div className="grid grid-cols-8 gap-1.5">
+              {EMOJIS.map((em) => (
                 <button
-                  key={em}
-                  type="button"
-                  onClick={() => setEmoji(em)}
-                  className="flex h-9 items-center justify-center rounded-xl text-xl transition-all active:scale-90"
-                  style={
-                    active
-                      ? {
-                          background: `rgba(${tf.glowRgb},0.18)`,
-                          boxShadow: `0 0 12px ${glowMed}`,
-                          border: `1px solid ${tf.accent}`,
-                        }
-                      : { background: "rgba(255,255,255,0.04)" }
-                  }
+                  key={em} type="button" onClick={() => setEmoji(em)}
+                  className="h-10 rounded-xl flex items-center justify-center text-xl active:scale-90 transition-all"
+                  style={{ background: emoji === em ? `rgba(${tf.glowRgb},0.2)` : "rgba(255,255,255,0.05)", border: emoji === em ? `1px solid ${tf.accent}` : "1px solid transparent" }}
                 >
                   {em}
                 </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* notes */}
-        <div className="mb-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Заметки (необязательно)
-          </p>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Детали, шаги, мотивация..."
-            rows={2}
-            className="w-full resize-none rounded-2xl border bg-[rgba(255,255,255,0.04)] px-4 py-3 text-sm text-slate-50 outline-none transition-colors placeholder:text-slate-500 focus:bg-[rgba(255,255,255,0.07)]"
-            style={{ borderColor: "rgba(255,255,255,0.1)" }}
-          />
-        </div>
-
-        {/* timeframe selector */}
-        {!editing && (
-          <div className="mb-6">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Период
-            </p>
-            <div className="grid grid-cols-4 gap-2">
-              {TIMEFRAMES.map((t) => {
-                const active = timeframe === t.value;
-                return (
-                  <button
-                    key={t.value}
-                    type="button"
-                    onClick={() => setTimeframe(t.value)}
-                    className="flex flex-col items-center gap-1 rounded-2xl border py-2.5 text-xs font-semibold transition-all"
-                    style={
-                      active
-                        ? {
-                            borderColor: t.accent,
-                            background: `rgba(${t.glowRgb},0.16)`,
-                            color: "#fff",
-                            boxShadow: `0 0 16px rgba(${t.glowRgb},0.4)`,
-                          }
-                        : {
-                            borderColor: "rgba(255,255,255,0.08)",
-                            background: "rgba(255,255,255,0.04)",
-                            color: "rgba(232,232,255,0.6)",
-                          }
-                    }
-                  >
-                    <span className="text-base leading-none">{t.icon}</span>
-                    {t.label}
-                  </button>
-                );
-              })}
+              ))}
             </div>
           </div>
-        )}
 
-        {/* actions */}
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 rounded-2xl bg-white/8 py-3.5 text-sm font-bold text-slate-300 transition-colors hover:bg-white/14"
-          >
-            Отмена
-          </button>
-          <button
-            type="submit"
-            disabled={!valid}
-            className="flex-[1.4] rounded-2xl py-3.5 text-sm font-bold text-[#05050f] transition-all active:scale-[0.98] disabled:opacity-30"
-            style={{
-              background: tf.accent,
-              boxShadow: valid ? `0 0 24px ${glowMed}` : "none",
-            }}
-          >
-            {editing ? "Сохранить" : "Добавить цель"}
-          </button>
+          {/* Notes */}
+          <div className="mb-4">
+            <div className="text-xs font-semibold text-white/30 mb-2 uppercase tracking-wider">Заметки</div>
+            <textarea
+              value={notes} onChange={(e) => setNotes(e.target.value)}
+              placeholder="Детали, шаги..."
+              rows={2}
+              className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm text-white outline-none resize-none placeholder:text-white/30"
+            />
+          </div>
+
+          {/* Timeframe */}
+          {!editing && (
+            <div className="mb-5">
+              <div className="text-xs font-semibold text-white/30 mb-2 uppercase tracking-wider">Период</div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {TIMEFRAMES.map((t) => (
+                  <button
+                    key={t.value} type="button" onClick={() => setTimeframe(t.value)}
+                    className="rounded-xl py-2.5 text-[12px] font-semibold active:scale-95 transition-all flex flex-col items-center gap-0.5"
+                    style={timeframe === t.value ? { background: `${t.accent}20`, color: t.accent } : { background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.4)" }}
+                  >
+                    <span className="text-base">{t.icon}</span>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-2">
+            <button onClick={onClose} className="flex-1 rounded-xl bg-white/8 py-3.5 text-sm font-semibold text-white/60">Отмена</button>
+            <button
+              onClick={() => onSubmit({ title: title.trim(), notes: notes.trim(), emoji, timeframe })}
+              disabled={!valid}
+              className="flex-[1.5] rounded-xl py-3.5 text-sm font-bold text-[#000] disabled:opacity-30 active:scale-95 transition-all"
+              style={{ background: tf.accent }}
+            >
+              {editing ? "Сохранить" : "Создать"}
+            </button>
+          </div>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

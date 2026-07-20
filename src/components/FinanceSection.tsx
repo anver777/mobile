@@ -1,460 +1,254 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { FinanceCategory, Transaction } from "@/db/schema";
-import { formatMoney, getPeriodRange, formatDate, formatWeekday, type Period } from "@/lib/utils";
+import type { Period } from "@/lib/utils";
+import { getPeriodRange } from "@/lib/utils";
 import { TransactionForm } from "./TransactionForm";
 
-interface FinanceSectionProps {
-  initialTransactions: Transaction[];
-  initialCategories: FinanceCategory[];
-}
-
-interface ExtendedTransaction extends Transaction {
+interface ExtTxn extends Transaction {
   categoryName?: string | null;
   categoryEmoji?: string | null;
   categoryColor?: string | null;
 }
 
-export function FinanceSection({ initialTransactions, initialCategories }: FinanceSectionProps) {
-  const [transactions, setTransactions] = useState<ExtendedTransaction[]>(
-    initialTransactions as ExtendedTransaction[]
-  );
-  const [period, setPeriod] = useState<Period>("month");
-  const [filterType, setFilterType] = useState<"all" | "income" | "expense">("all");
-  const [showForm, setShowForm] = useState(false);
-  const [editingTxn, setEditingTxn] = useState<ExtendedTransaction | null>(null);
-  const [loading, setLoading] = useState(false);
+const MONTHS = ["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
+const WEEKDAYS = ["Вс","Пн","Вт","Ср","Чт","Пт","Сб"];
 
-  const incomeCategories = initialCategories.filter((c) => c.type === "income" || c.type === "both");
-  const expenseCategories = initialCategories.filter((c) => c.type === "expense" || c.type === "both");
+const PERIODS: { key: Period; label: string }[] = [
+  { key: "day", label: "Сегодня" },
+  { key: "week", label: "Неделя" },
+  { key: "month", label: "Месяц" },
+  { key: "year", label: "Год" },
+  { key: "all", label: "Всё" },
+];
+
+export function FinanceSection({ initialTransactions, initialCategories }: {
+  initialTransactions: Transaction[];
+  initialCategories: FinanceCategory[];
+}) {
+  const [txns, setTxns] = useState<ExtTxn[]>(initialTransactions as ExtTxn[]);
+  const [period, setPeriod] = useState<Period>("month");
+  const [typeFilter, setTypeFilter] = useState<"all" | "income" | "expense">("all");
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<ExtTxn | null>(null);
+
+  const incomeCats = initialCategories.filter((c) => c.type === "income" || c.type === "both");
+  const expenseCats = initialCategories.filter((c) => c.type === "expense" || c.type === "both");
 
   const refresh = useCallback(async () => {
-    setLoading(true);
     try {
-      const range = getPeriodRange(period);
-      const params = new URLSearchParams({
-        from: range.from.toISOString(),
-        to: range.to.toISOString(),
-      });
-      if (filterType !== "all") params.set("type", filterType);
-      const res = await fetch(`/api/finance/transactions?${params.toString()}`);
-      if (!res.ok) throw new Error();
-      setTransactions(await res.json());
-    } catch (error) {
-      console.error("Failed to refresh transactions:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [period, filterType]);
+      const r = getPeriodRange(period);
+      const p = new URLSearchParams({ from: r.from.toISOString(), to: r.to.toISOString() });
+      if (typeFilter !== "all") p.set("type", typeFilter);
+      const res = await fetch(`/api/finance/transactions?${p}`);
+      if (res.ok) setTxns(await res.json());
+    } catch {}
+  }, [period, typeFilter]);
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+  useEffect(() => { refresh(); }, [refresh]);
 
-  // Stats
   const stats = useMemo(() => {
-    let income = 0;
-    let expense = 0;
-    const byCategory = new Map<string, { name: string; emoji: string; color: string; amount: number; type: string }>();
-
-    for (const txn of transactions) {
-      const amount = Number(txn.amount);
-      if (txn.type === "income") income += amount;
-      else expense += amount;
-
-      const catKey = txn.categoryId ? `cat-${txn.categoryId}` : `uncat-${txn.type}`;
-      if (!byCategory.has(catKey)) {
-        byCategory.set(catKey, {
-          name: txn.categoryName ?? "Без категории",
-          emoji: txn.categoryEmoji ?? (txn.type === "income" ? "💰" : "💸"),
-          color: txn.categoryColor ?? (txn.type === "income" ? "#00ffa3" : "#ff6b35"),
-          amount: 0,
-          type: txn.type,
-        });
-      }
-      byCategory.get(catKey)!.amount += amount;
+    let inc = 0, exp = 0;
+    const cats = new Map<string, { name: string; emoji: string; color: string; amt: number; type: string }>();
+    for (const t of txns) {
+      const a = Number(t.amount);
+      if (t.type === "income") inc += a; else exp += a;
+      const key = t.categoryId ? `c${t.categoryId}` : `u${t.type}`;
+      if (!cats.has(key)) cats.set(key, { name: t.categoryName ?? "Без категории", emoji: t.categoryEmoji ?? (t.type === "income" ? "💰" : "💸"), color: t.categoryColor ?? (t.type === "income" ? "#00ffa3" : "#ff2d6f"), amt: 0, type: t.type });
+      cats.get(key)!.amt += a;
     }
+    return { inc, exp, bal: inc - exp, cats: Array.from(cats.values()).sort((a, b) => b.amt - a.amt) };
+  }, [txns]);
 
-    return {
-      income,
-      expense,
-      balance: income - expense,
-      byCategory: Array.from(byCategory.values()).sort((a, b) => b.amount - a.amount),
-    };
-  }, [transactions]);
-
-  async function handleSubmit(
-    data: { type: "income" | "expense"; amount: number; title: string; notes: string; categoryId: number | null; occurredOn: string },
-    editingId: number | null
-  ) {
-    setShowForm(false);
+  async function save(data: any, id: number | null) {
+    setFormOpen(false);
     try {
-      const url = editingId ? `/api/finance/transactions/${editingId}` : "/api/finance/transactions";
-      const method = editingId ? "PATCH" : "POST";
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error();
-      await refresh();
-    } catch (error) {
-      console.error("Failed to save transaction:", error);
-    }
+      const url = id ? `/api/finance/transactions/${id}` : "/api/finance/transactions";
+      const res = await fetch(url, { method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (res.ok) refresh();
+    } catch {}
   }
 
-  async function deleteTransaction(id: number) {
-    setTransactions((prev) => prev.filter((t) => t.id !== id));
-    try {
-      const res = await fetch(`/api/finance/transactions/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
-    } catch {
-      await refresh();
-    }
+  async function del(id: number) {
+    setTxns((p) => p.filter((t) => t.id !== id));
+    try { await fetch(`/api/finance/transactions/${id}`, { method: "DELETE" }); } catch { refresh(); }
   }
 
-  // Group by day
-  const groupedByDay = useMemo(() => {
-    const groups: { date: Date; items: ExtendedTransaction[] }[] = [];
-    const map = new Map<string, { date: Date; items: ExtendedTransaction[] }>();
-    for (const txn of transactions) {
-      const d = typeof txn.occurredOn === "string" ? new Date(txn.occurredOn) : txn.occurredOn;
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      if (!map.has(key)) map.set(key, { date: d, items: [] });
-      map.get(key)!.items.push(txn);
+  const byDay = useMemo(() => {
+    const map = new Map<string, { date: Date; items: ExtTxn[] }>();
+    for (const t of txns) {
+      const d = new Date(t.occurredOn);
+      const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      if (!map.has(k)) map.set(k, { date: d, items: [] });
+      map.get(k)!.items.push(t);
     }
-    for (const [, group] of map) {
-      group.items.sort((a, b) => {
-        const da = new Date(a.occurredOn);
-        const db = new Date(b.occurredOn);
-        return db.getTime() - da.getTime();
-      });
-      groups.push(group);
-    }
-    groups.sort((a, b) => b.date.getTime() - a.date.getTime());
-    return groups;
-  }, [transactions]);
-
-  const maxCategoryAmount = stats.byCategory.length > 0 ? Math.max(...stats.byCategory.map((c) => c.amount)) : 1;
+    return Array.from(map.values()).sort((a, b) => b.date.getTime() - a.date.getTime());
+  }, [txns]);
 
   return (
     <>
       {/* Header */}
-      <header
-        className="relative shrink-0 overflow-hidden px-5 pb-6 pt-8 text-white"
-        style={{ background: "radial-gradient(120% 90% at 50% -10%, rgba(0,255,163,0.22), transparent 60%), #08081a" }}
-      >
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 h-px"
-          style={{ background: "linear-gradient(90deg, transparent, #00ffa3, transparent)" }}
-        />
-        <div className="mx-auto max-w-xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div
-                className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/8 text-lg backdrop-blur-sm"
-                style={{ boxShadow: "0 0 16px rgba(0,255,163,0.4)", border: "1px solid rgba(0,255,163,0.4)" }}
-              >
-                💰
-              </div>
-              <span className="text-base font-extrabold tracking-wide" style={{ textShadow: "0 0 14px rgba(0,255,163,0.6)" }}>
-                Финансы
-              </span>
-            </div>
-            <button
-              onClick={() => refresh()}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 transition-all hover:bg-white/15 active:scale-90"
-              style={{ border: "1px solid rgba(255,255,255,0.1)" }}
-              aria-label="Обновить"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M23 4v6h-6" />
-                <path d="M1 20v-6h6" />
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Balance card */}
-          <div
-            className="mt-5 rounded-3xl border border-[rgba(0,255,163,0.3)] bg-[rgba(0,255,163,0.06)] p-5 backdrop-blur-sm"
-            style={{ boxShadow: "0 0 30px rgba(0,255,163,0.15)" }}
-          >
-            <div className="text-xs font-semibold uppercase tracking-wide text-white/50">Баланс</div>
-            <div
-              className="mt-1 text-4xl font-extrabold"
-              style={{
-                color: stats.balance >= 0 ? "#00ffa3" : "#ff2d6f",
-                textShadow: `0 0 20px ${stats.balance >= 0 ? "rgba(0,255,163,0.6)" : "rgba(255,45,111,0.6)"}`,
-              }}
-            >
-              {stats.balance >= 0 ? "+" : ""}
-              {formatMoney(stats.balance)}
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <div>
-                <div className="text-[10px] font-bold uppercase tracking-wide text-white/40">Доходы</div>
-                <div className="text-lg font-bold text-[#00ffa3]" style={{ textShadow: "0 0 10px rgba(0,255,163,0.5)" }}>
-                  +{formatMoney(stats.income)}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] font-bold uppercase tracking-wide text-white/40">Расходы</div>
-                <div className="text-lg font-bold text-[#ff2d6f]" style={{ textShadow: "0 0 10px rgba(255,45,111,0.5)" }}>
-                  −{formatMoney(stats.expense)}
-                </div>
-              </div>
-            </div>
-          </div>
+      <div className="px-5 pt-4 pb-1">
+        <div className="flex items-center justify-between">
+          <h1 className="text-[28px] font-bold text-white tracking-tight">Финансы</h1>
+          <button onClick={refresh} className="h-9 w-9 flex items-center justify-center rounded-full active:scale-90 transition-transform">
+            <svg viewBox="0 0 24 24" className="h-5 w-5 text-white/50" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 4v6h-6" /><path d="M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
         </div>
-      </header>
+      </div>
 
-      {/* Period + type filter */}
-      <div className="sticky top-0 z-20 border-b border-[rgba(255,255,255,0.06)] bg-[#070714]/90 backdrop-blur-xl">
-        <div className="mx-auto max-w-xl px-3 py-2.5">
-          <div className="flex gap-1.5 mb-2">
-            {(["day", "week", "month", "year", "all"] as Period[]).map((p) => {
-              const isActive = period === p;
-              const labels: Record<Period, string> = {
-                day: "День",
-                week: "Неделя",
-                month: "Месяц",
-                year: "Год",
-                all: "Всё",
-              };
-              return (
-                <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  className="flex-1 rounded-xl py-1.5 text-[11px] font-bold transition-all active:scale-95"
-                  style={
-                    isActive
-                      ? {
-                          background: "rgba(0,255,163,0.18)",
-                          color: "#00ffa3",
-                          boxShadow: "0 0 12px rgba(0,255,163,0.3)",
-                          border: "1px solid rgba(0,255,163,0.5)",
-                        }
-                      : { color: "rgba(232,232,255,0.45)" }
-                  }
-                >
-                  {labels[p]}
-                </button>
-              );
-            })}
+      {/* Balance */}
+      <div className="px-5 mb-3">
+        <div
+          className="rounded-2xl p-4 border"
+          style={{
+            background: stats.bal >= 0 ? "rgba(0,255,163,0.06)" : "rgba(255,45,111,0.06)",
+            borderColor: stats.bal >= 0 ? "rgba(0,255,163,0.15)" : "rgba(255,45,111,0.15)",
+          }}
+        >
+          <div className="text-xs text-white/40 mb-1">Баланс</div>
+          <div className="text-[30px] font-extrabold tracking-tight" style={{ color: stats.bal >= 0 ? "#00ffa3" : "#ff2d6f" }}>
+            {stats.bal >= 0 ? "+" : "−"}{fm(Math.abs(stats.bal))}
           </div>
-          <div className="flex gap-1.5">
-            {[
-              { key: "all", label: "Все", color: "#b14dff" },
-              { key: "income", label: "Доходы", color: "#00ffa3" },
-              { key: "expense", label: "Расходы", color: "#ff2d6f" },
-            ].map((f) => {
-              const isActive = filterType === f.key;
-              return (
-                <button
-                  key={f.key}
-                  onClick={() => setFilterType(f.key as "all" | "income" | "expense")}
-                  className="flex-1 rounded-xl py-1.5 text-[11px] font-bold transition-all active:scale-95"
-                  style={
-                    isActive
-                      ? {
-                          background: `rgba(${hexToRgb(f.color)},0.18)`,
-                          color: f.color,
-                          boxShadow: `0 0 12px rgba(${hexToRgb(f.color)},0.3)`,
-                          border: `1px solid rgba(${hexToRgb(f.color)},0.5)`,
-                        }
-                      : { color: "rgba(232,232,255,0.45)" }
-                  }
-                >
-                  {f.label}
-                </button>
-              );
-            })}
+          <div className="flex gap-4 mt-2">
+            <div className="text-xs">
+              <span className="text-white/40">Доходы</span>
+              <div className="text-sm font-semibold text-emerald-400">+{fm(stats.inc)}</div>
+            </div>
+            <div className="text-xs">
+              <span className="text-white/40">Расходы</span>
+              <div className="text-sm font-semibold text-rose-400">−{fm(stats.exp)}</div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Content */}
-      <main className="flex-1 px-4 py-4 pb-24">
-        <div className="mx-auto max-w-xl space-y-4">
-          {/* Categories breakdown */}
-          {stats.byCategory.length > 0 && (
-            <div
-              className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm"
-              style={{ boxShadow: "0 0 16px rgba(177,77,255,0.08)" }}
+      {/* Filters */}
+      <div className="px-5 mb-3">
+        <div className="flex gap-1 mb-2">
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => setPeriod(p.key)}
+              className="flex-1 rounded-xl py-2 text-[12px] font-semibold active:scale-95 transition-all"
+              style={period === p.key ? { background: "rgba(0,255,163,0.15)", color: "#00ffa3" } : { background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.4)" }}
             >
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-white" style={{ textShadow: "0 0 10px rgba(255,255,255,0.2)" }}>
-                  По категориям
-                </h3>
-                <span className="text-[10px] font-semibold text-white/40">
-                  {transactions.length} операций
-                </span>
-              </div>
-              <div className="space-y-2">
-                {stats.byCategory.map((cat) => (
-                  <div key={`${cat.emoji}-${cat.name}-${cat.type}`}>
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span>{cat.emoji}</span>
-                        <span className="text-white/70">{cat.name}</span>
-                      </div>
-                      <span
-                        className="font-bold"
-                        style={{
-                          color: cat.type === "income" ? "#00ffa3" : "#ff2d6f",
-                          textShadow: `0 0 8px ${cat.type === "income" ? "rgba(0,255,163,0.4)" : "rgba(255,45,111,0.4)"}`,
-                        }}
-                      >
-                        {cat.type === "income" ? "+" : "−"}
-                        {formatMoney(cat.amount)}
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1">
+          {[{ k: "all", l: "Все", c: "#fff" }, { k: "income", l: "Доходы", c: "#00ffa3" }, { k: "expense", l: "Расходы", c: "#ff2d6f" }].map((f) => (
+            <button
+              key={f.k}
+              onClick={() => setTypeFilter(f.k as any)}
+              className="flex-1 rounded-xl py-2 text-[12px] font-semibold active:scale-95 transition-all"
+              style={typeFilter === f.k ? { background: `${f.c}18`, color: f.c } : { background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.4)" }}
+            >
+              {f.l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Categories */}
+      {stats.cats.length > 0 && (
+        <div className="px-5 mb-4">
+          <div className="rounded-2xl p-4 border border-white/[0.06]" style={{ background: "rgba(255,255,255,0.03)" }}>
+            <div className="text-xs font-semibold text-white/50 mb-3">По категориям</div>
+            <div className="space-y-2.5">
+              {stats.cats.map((c, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <span className="text-base">{c.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between mb-1">
+                      <span className="text-sm text-white/70 truncate">{c.name}</span>
+                      <span className="text-sm font-semibold" style={{ color: c.type === "income" ? "#00ffa3" : "#ff2d6f" }}>
+                        {c.type === "income" ? "+" : "−"}{fm(c.amt)}
                       </span>
                     </div>
-                    <div className="mt-1 h-1 rounded-full bg-white/5">
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${(cat.amount / maxCategoryAmount) * 100}%`,
-                          background: cat.color,
-                          boxShadow: `0 0 6px ${cat.color}`,
-                        }}
-                      />
+                    <div className="h-1 rounded-full bg-white/5">
+                      <div className="h-full rounded-full" style={{ width: `${stats.cats.length > 0 ? (c.amt / Math.max(...stats.cats.map((x) => x.amt))) * 100 : 0}%`, background: c.color }} />
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Transactions by day */}
-          {groupedByDay.length === 0 ? (
-            <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-              <div
-                className="flex h-24 w-24 items-center justify-center rounded-full text-5xl"
-                style={{
-                  background: "rgba(0,255,163,0.1)",
-                  border: "1px solid rgba(0,255,163,0.35)",
-                  boxShadow: "0 0 30px rgba(0,255,163,0.3)",
-                }}
-              >
-                💳
-              </div>
-              <h3 className="mt-5 text-lg font-bold text-white">Нет операций</h3>
-              <p className="mt-1.5 max-w-[240px] text-sm text-white/45">
-                Нажмите «+», чтобы добавить первую операцию
-              </p>
-            </div>
-          ) : (
-            groupedByDay.map((group) => (
-              <div key={group.date.toISOString()}>
-                <div className="mb-2 flex items-center justify-between px-1">
-                  <span className="text-xs font-bold uppercase tracking-wide text-white/50">
-                    {formatWeekday(group.date)} · {formatDate(group.date)}
-                  </span>
-                  <span className="text-[10px] font-semibold text-white/30">
-                    {group.items.length}{" "}
-                    {group.items.length === 1 ? "операция" : group.items.length < 5 ? "операции" : "операций"}
-                  </span>
                 </div>
-                <div className="space-y-2">
-                  {group.items.map((txn) => {
-                    const isIncome = txn.type === "income";
-                    return (
-                      <button
-                        key={txn.id}
-                        onClick={() => {
-                          setEditingTxn(txn);
-                          setShowForm(true);
-                        }}
-                        className="flex w-full items-center gap-3 rounded-2xl border border-white/8 bg-white/4 p-3 text-left backdrop-blur-sm transition-all hover:bg-white/8 active:scale-[0.99]"
-                      >
-                        <div
-                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl"
-                          style={{
-                            background: isIncome ? "rgba(0,255,163,0.12)" : "rgba(255,45,111,0.12)",
-                            border: `1px solid ${isIncome ? "rgba(0,255,163,0.3)" : "rgba(255,45,111,0.3)"}`,
-                          }}
-                        >
-                          {txn.categoryEmoji ?? (isIncome ? "💰" : "💸")}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-semibold text-white truncate">{txn.title}</div>
-                          {txn.categoryName && (
-                            <div className="text-[11px] text-white/40 truncate">{txn.categoryName}</div>
-                          )}
-                        </div>
-                        <div
-                          className="text-sm font-bold"
-                          style={{
-                            color: isIncome ? "#00ffa3" : "#ff2d6f",
-                            textShadow: `0 0 8px ${isIncome ? "rgba(0,255,163,0.5)" : "rgba(255,45,111,0.5)"}`,
-                          }}
-                        >
-                          {isIncome ? "+" : "−"}
-                          {formatMoney(Number(txn.amount))}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))
-          )}
+              ))}
+            </div>
+          </div>
         </div>
-      </main>
+      )}
+
+      {/* Transactions */}
+      <div className="px-5 pb-28 space-y-3" style={{ overflowY: "auto" }}>
+        {byDay.length === 0 ? (
+          <div className="flex flex-col items-center py-16 text-center">
+            <div className="text-4xl mb-3">💳</div>
+            <div className="text-sm font-medium text-white/50">Нет операций</div>
+          </div>
+        ) : (
+          byDay.map((g) => (
+            <div key={g.date.toISOString()}>
+              <div className="text-xs font-semibold text-white/30 mb-1.5 px-1">
+                {WEEKDAYS[g.date.getDay()]}, {g.date.getDate()} {MONTHS[g.date.getMonth()]}
+              </div>
+              <div className="space-y-1.5">
+                {g.items.map((t) => {
+                  const isInc = t.type === "income";
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => { setEditing(t); setFormOpen(true); }}
+                      className="w-full flex items-center gap-3 rounded-xl px-4 py-3.5 border border-white/[0.05] active:scale-[0.98] transition-all text-left"
+                      style={{ background: "rgba(255,255,255,0.03)" }}
+                    >
+                      <div className="text-lg">
+                        {t.categoryEmoji ?? (isInc ? "📈" : "📉")}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[14px] font-medium text-white truncate">{t.title}</div>
+                        {t.categoryName && <div className="text-[11px] text-white/30 truncate">{t.categoryName}</div>}
+                      </div>
+                      <div className="text-[14px] font-semibold" style={{ color: isInc ? "#00ffa3" : "#ff2d6f" }}>
+                        {isInc ? "+" : "−"}{fm(Number(t.amount))}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
 
       {/* FAB */}
       <button
-        onClick={() => {
-          setEditingTxn(null);
-          setShowForm(true);
-        }}
-        className="fixed bottom-28 right-4 z-30 flex items-center justify-center rounded-full text-[#05050f] shadow-2xl transition-all active:scale-90"
-        style={{
-          width: "48px",
-          height: "48px",
-          background: "#00ffa3",
-          boxShadow: "0 0 20px rgba(0,255,163,0.6), 0 6px 20px rgba(0,0,0,0.4)",
-          animation: "fabIn 0.4s ease",
-        }}
+        onClick={() => { setEditing(null); setFormOpen(true); }}
+        className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] right-4 z-30 h-14 w-14 rounded-2xl flex items-center justify-center shadow-2xl active:scale-90 transition-transform"
+        style={{ background: "#00ffa3", boxShadow: "0 0 24px rgba(0,255,163,0.5), 0 8px 24px rgba(0,0,0,0.4)" }}
       >
-        <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+        <svg viewBox="0 0 24 24" className="h-7 w-7 text-[#000]" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
           <path d="M12 5v14M5 12h14" />
         </svg>
       </button>
 
-      {showForm && (
+      {formOpen && (
         <TransactionForm
-          editing={editingTxn}
-          incomeCategories={incomeCategories}
-          expenseCategories={expenseCategories}
-          onClose={() => {
-            setShowForm(false);
-            setEditingTxn(null);
-          }}
-          onSubmit={handleSubmit}
-          onDelete={editingTxn ? () => {
-            deleteTransaction(editingTxn.id);
-            setShowForm(false);
-            setEditingTxn(null);
-          } : undefined}
+          editing={editing}
+          incomeCategories={incomeCats}
+          expenseCategories={expenseCats}
+          onClose={() => { setFormOpen(false); setEditing(null); }}
+          onSubmit={save}
+          onDelete={editing ? () => { del(editing.id); setFormOpen(false); setEditing(null); } : undefined}
         />
       )}
     </>
   );
 }
 
-function hexToRgb(hex: string): string {
-  const h = hex.replace("#", "");
-  const bigint = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
-  return `${(bigint >> 16) & 255},${(bigint >> 8) & 255},${bigint & 255}`;
+function fm(n: number) {
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n);
 }
