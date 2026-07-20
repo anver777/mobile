@@ -3,142 +3,320 @@
 import { useEffect, useState } from "react";
 import type { FinanceCategory, Transaction } from "@/db/schema";
 
-interface ExtTxn extends Transaction {
+interface ExtendedTransaction extends Transaction {
   categoryName?: string | null;
   categoryEmoji?: string | null;
   categoryColor?: string | null;
 }
 
-interface Props {
-  editing: ExtTxn | null;
+interface TransactionFormProps {
+  editing: ExtendedTransaction | null;
   incomeCategories: FinanceCategory[];
   expenseCategories: FinanceCategory[];
   onClose: () => void;
-  onSubmit: (d: { type: "income"|"expense"; amount: number; title: string; notes: string; categoryId: number|null; occurredOn: string }, id: number|null) => void;
+  onSubmit: (
+    data: {
+      type: "income" | "expense";
+      amount: number;
+      title: string;
+      notes: string;
+      categoryId: number | null;
+      occurredOn: string;
+    },
+    editingId: number | null
+  ) => void;
   onDelete?: () => void;
 }
 
-export function TransactionForm({ editing, incomeCategories, expenseCategories, onClose, onSubmit, onDelete }: Props) {
-  const [type, setType] = useState<"income"|"expense">((editing?.type as any) ?? "expense");
+export function TransactionForm({
+  editing,
+  incomeCategories,
+  expenseCategories,
+  onClose,
+  onSubmit,
+  onDelete,
+}: TransactionFormProps) {
+  const [type, setType] = useState<"income" | "expense">((editing?.type as "income" | "expense") ?? "expense");
   const [amount, setAmount] = useState("");
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [categoryId, setCategoryId] = useState<number | null>(editing?.categoryId ?? null);
   const [occurredOn, setOccurredOn] = useState("");
-  const [delConfirm, setDelConfirm] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const cats = type === "income" ? incomeCategories : expenseCategories;
-  const accent = type === "income" ? "#00ffa3" : "#ff2d6f";
+  const categories = type === "income" ? incomeCategories : expenseCategories;
 
   useEffect(() => {
     if (editing) {
-      setType(editing.type as any);
+      setType(editing.type as "income" | "expense");
       setAmount(String(editing.amount));
       setTitle(editing.title);
       setNotes(editing.notes ?? "");
       setCategoryId(editing.categoryId);
-      setOccurredOn(new Date(editing.occurredOn).toISOString().slice(0, 16));
+      const d = new Date(editing.occurredOn);
+      setOccurredOn(d.toISOString().slice(0, 16));
     } else {
-      setOccurredOn(new Date().toISOString().slice(0, 16));
+      const now = new Date();
+      setOccurredOn(now.toISOString().slice(0, 16));
+      setCategoryId(null);
     }
   }, [editing]);
 
-  useEffect(() => { if (!editing) setCategoryId(cats[0]?.id ?? null); }, [type, cats, editing]);
+  useEffect(() => {
+    if (!editing) {
+      setCategoryId(categories[0]?.id ?? null);
+    }
+  }, [type, categories, editing]);
 
   useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    if (editing || true) window.addEventListener("keydown", onKey);
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
   const valid = title.trim().length > 0 && Number(amount) > 0;
 
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valid) return;
+    onSubmit(
+      {
+        type,
+        amount: Number(amount),
+        title: title.trim(),
+        notes: notes.trim(),
+        categoryId,
+        occurredOn: new Date(occurredOn).toISOString(),
+      },
+      editing?.id ?? null
+    );
+  }
+
+  const accent = type === "income" ? "#00ffa3" : "#ff2d6f";
+  const glow = type === "income" ? "rgba(0,255,163,0.5)" : "rgba(255,45,111,0.5)";
+  const glowRgb = type === "income" ? "0,255,163" : "255,45,111";
+
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="absolute inset-x-0 bottom-0 mx-auto max-w-lg max-h-[90%] overflow-y-auto rounded-t-3xl bg-[#0c0c18] border-t border-white/[0.08]" style={{ animation: "sheetUp 0.3s ease" }}>
-        <div className="flex justify-center pt-3 pb-2"><div className="h-1 w-10 rounded-full bg-white/20" /></div>
+      <div className="absolute inset-0 bg-[#04040c]/80 backdrop-blur-md" onClick={onClose} />
+      <form
+        onSubmit={handleSubmit}
+        className="absolute inset-x-0 bottom-0 mx-auto max-w-2xl max-h-[92%] overflow-y-auto rounded-t-[28px] border-t border-[rgba(255,255,255,0.08)] bg-[#0a0a18]/95 px-5 pb-8 pt-3 backdrop-blur-xl"
+        style={{
+          animation: "sheetUp 0.32s cubic-bezier(0.16,1,0.3,1)",
+          boxShadow: `0 -20px 60px rgba(0,0,0,0.6), 0 -2px 30px ${glow}`,
+        }}
+      >
+        <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-white/20" />
 
-        <div className="px-5 pb-6">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-lg font-bold text-white">{editing ? "Изменить" : "Новая операция"}</h2>
-            <button onClick={onClose} className="h-9 w-9 flex items-center justify-center rounded-full bg-white/10 text-white/60">✕</button>
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-white" style={{ textShadow: `0 0 16px ${glow}` }}>
+            {editing ? "Редактировать" : "Новая операция"}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-slate-300 transition-colors hover:bg-white/20"
+            aria-label="Закрыть"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Type toggle */}
+        <div className="mb-4 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setType("expense")}
+            className="rounded-2xl border py-4 text-base font-bold transition-all active:scale-95"
+            style={
+              type === "expense"
+                ? {
+                    borderColor: "rgba(255,45,111,0.6)",
+                    background: "rgba(255,45,111,0.18)",
+                    color: "#ff2d6f",
+                    boxShadow: "0 0 16px rgba(255,45,111,0.3)",
+                  }
+                : { borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", color: "rgba(232,232,255,0.6)" }
+            }
+          >
+            💸 Расход
+          </button>
+          <button
+            type="button"
+            onClick={() => setType("income")}
+            className="rounded-2xl border py-4 text-base font-bold transition-all active:scale-95"
+            style={
+              type === "income"
+                ? {
+                    borderColor: "rgba(0,255,163,0.6)",
+                    background: "rgba(0,255,163,0.18)",
+                    color: "#00ffa3",
+                    boxShadow: "0 0 16px rgba(0,255,163,0.3)",
+                  }
+                : { borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", color: "rgba(232,232,255,0.6)" }
+            }
+          >
+            💰 Доход
+          </button>
+        </div>
+
+        {/* Amount */}
+        <div className="mb-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Сумма</p>
+          <div
+            className="flex items-center rounded-2xl border px-4 py-4"
+            style={{ borderColor: `rgba(${glowRgb},0.4)`, background: "rgba(255,255,255,0.04)" }}
+          >
+            <span
+              className="mr-2 text-3xl font-bold"
+              style={{ color: accent, textShadow: `0 0 12px ${glow}` }}
+            >
+              {type === "expense" ? "−" : "+"}
+            </span>
+            <input
+              type="number"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              placeholder="0"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="min-w-0 flex-1 bg-transparent text-3xl font-bold text-white outline-none placeholder:text-white/20"
+              autoFocus
+              autoComplete="off"
+            />
+            <span className="text-base font-semibold text-white/40">₽</span>
           </div>
+        </div>
 
-          {/* Type toggle */}
-          <div className="grid grid-cols-2 gap-2 mb-4">
-            {(["expense", "income"] as const).map((t) => {
-              const a = t === "income";
-              const active = type === t;
+        {/* Title */}
+        <div className="mb-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Название</p>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="На что потратили / откуда доход?"
+            className="w-full rounded-2xl border bg-[rgba(255,255,255,0.04)] px-4 py-3 text-[15px] font-medium text-slate-50 outline-none transition-colors placeholder:text-slate-500 focus:bg-[rgba(255,255,255,0.07)]"
+            style={{ borderColor: "rgba(255,255,255,0.1)" }}
+          />
+        </div>
+
+        {/* Categories */}
+        <div className="mb-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Категория</p>
+          <div className="grid grid-cols-4 gap-1.5 max-h-48 overflow-y-auto">
+            {categories.map((cat) => {
+              const active = categoryId === cat.id;
               return (
-                <button key={t} type="button" onClick={() => setType(t)} className="rounded-xl py-3.5 text-[15px] font-semibold active:scale-95 transition-all" style={active ? { background: `${a ? "0,255,163" : "255,45,111"}20`, color: a ? "#00ffa3" : "#ff2d6f" } : { background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.5)" }}>
-                  {a ? "💰 Доход" : "💸 Расход"}
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setCategoryId(cat.id)}
+                  className="flex flex-col items-center gap-0.5 rounded-xl p-2 text-[10px] font-semibold transition-all active:scale-95"
+                  style={
+                    active
+                      ? {
+                          background: `rgba(${hexToRgb(cat.color)},0.18)`,
+                          border: `1px solid ${cat.color}`,
+                          boxShadow: `0 0 10px ${cat.color}`,
+                          color: "#fff",
+                        }
+                      : { background: "rgba(255,255,255,0.04)", color: "rgba(232,232,255,0.7)" }
+                  }
+                >
+                  <span className="text-xl">{cat.emoji}</span>
+                  <span className="truncate w-full text-center">{cat.name}</span>
                 </button>
               );
             })}
           </div>
-
-          {/* Amount */}
-          <div className="mb-4">
-            <div className="text-xs font-semibold text-white/30 mb-2 uppercase tracking-wider">Сумма</div>
-            <div className="flex items-center rounded-xl bg-white/5 border border-white/10 px-4 py-4">
-              <span className="mr-2 text-2xl font-bold" style={{ color: accent }}>{type === "expense" ? "−" : "+"}</span>
-              <input type="number" inputMode="numeric" pattern="[0-9]*" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus className="flex-1 bg-transparent text-2xl font-bold text-white outline-none placeholder:text-white/20" />
-              <span className="text-sm text-white/40">₽</span>
-            </div>
-          </div>
-
-          {/* Title */}
-          <div className="mb-4">
-            <div className="text-xs font-semibold text-white/30 mb-2 uppercase tracking-wider">Название</div>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="На что?" className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
-          </div>
-
-          {/* Categories */}
-          <div className="mb-4">
-            <div className="text-xs font-semibold text-white/30 mb-2 uppercase tracking-wider">Категория</div>
-            <div className="grid grid-cols-4 gap-1.5 max-h-40 overflow-y-auto">
-              {cats.map((c) => (
-                <button key={c.id} type="button" onClick={() => setCategoryId(c.id)} className="rounded-xl py-2.5 flex flex-col items-center gap-0.5 active:scale-95 transition-all" style={categoryId === c.id ? { background: `${hexToRgb(c.color)}20`, border: `1px solid ${c.color}` } : { background: "rgba(255,255,255,0.05)" }}>
-                  <span className="text-xl">{c.emoji}</span>
-                  <span className="text-[10px] text-white/60 truncate w-full text-center">{c.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Date */}
-          <div className="mb-4">
-            <div className="text-xs font-semibold text-white/30 mb-2 uppercase tracking-wider">Дата</div>
-            <input type="datetime-local" value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm text-white outline-none" style={{ colorScheme: "dark" }} />
-          </div>
-
-          {/* Notes */}
-          <div className="mb-5">
-            <div className="text-xs font-semibold text-white/30 mb-2 uppercase tracking-wider">Заметка</div>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Детали..." rows={2} className="w-full resize-none rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm text-white outline-none placeholder:text-white/30" />
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-2">
-            {editing && onDelete && (
-              <button type="button" onClick={() => { if (delConfirm) { onDelete(); } else { setDelConfirm(true); setTimeout(() => setDelConfirm(false), 3000); } }} className="w-12 rounded-xl flex items-center justify-center transition-all" style={{ background: delConfirm ? "#ff2d6f" : "rgba(255,45,111,0.1)" }}>
-                {delConfirm ? <span className="text-[10px] font-bold text-[#000]">✕</span> : <span className="text-lg">🗑️</span>}
-              </button>
-            )}
-            <button onClick={onClose} className="flex-1 rounded-xl bg-white/8 py-3.5 text-sm font-semibold text-white/60">Отмена</button>
-            <button onClick={() => onSubmit({ type, amount: Number(amount), title: title.trim(), notes: notes.trim(), categoryId, occurredOn: new Date(occurredOn).toISOString() }, editing?.id ?? null)} disabled={!valid} className="flex-[1.5] rounded-xl py-3.5 text-sm font-bold text-[#000] disabled:opacity-30 active:scale-95 transition-all" style={{ background: accent }}>
-              {editing ? "Сохранить" : "Добавить"}
-            </button>
-          </div>
         </div>
-      </div>
+
+        {/* Date */}
+        <div className="mb-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Дата и время</p>
+          <input
+            type="datetime-local"
+            value={occurredOn}
+            onChange={(e) => setOccurredOn(e.target.value)}
+            className="w-full rounded-2xl border bg-[rgba(255,255,255,0.04)] px-4 py-3 text-[15px] text-white outline-none"
+            style={{ borderColor: "rgba(255,255,255,0.1)", colorScheme: "dark" }}
+          />
+        </div>
+
+        {/* Notes */}
+        <div className="mb-5">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Заметка (необязательно)</p>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Детали..."
+            rows={2}
+            className="w-full resize-none rounded-2xl border bg-[rgba(255,255,255,0.04)] px-4 py-3 text-sm text-slate-50 outline-none transition-colors placeholder:text-slate-500 focus:bg-[rgba(255,255,255,0.07)]"
+            style={{ borderColor: "rgba(255,255,255,0.1)" }}
+          />
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2">
+          {editing && onDelete && (
+            <button
+              type="button"
+              onClick={() => {
+                if (confirmingDelete) {
+                  onDelete();
+                } else {
+                  setConfirmingDelete(true);
+                  setTimeout(() => setConfirmingDelete(false), 3000);
+                }
+              }}
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-all"
+              style={
+                confirmingDelete
+                  ? {
+                      background: "#ff2d6f",
+                      color: "#05050f",
+                      boxShadow: "0 0 14px rgba(255,45,111,0.6)",
+                    }
+                  : { background: "rgba(255,45,111,0.1)", color: "#ff2d6f" }
+              }
+            >
+              {confirmingDelete ? <span className="text-[10px] font-bold">OK?</span> : (
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 6h18" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+              )}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-2xl bg-white/8 py-3 text-sm font-bold text-slate-300 transition-colors hover:bg-white/14"
+          >
+            Отмена
+          </button>
+          <button
+            type="submit"
+            disabled={!valid}
+            className="flex-[1.6] rounded-2xl py-3 text-sm font-bold text-[#05050f] transition-all active:scale-[0.98] disabled:opacity-30"
+            style={{ background: accent, boxShadow: valid ? `0 0 24px ${glow}` : "none" }}
+          >
+            {editing ? "Сохранить" : "Добавить"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
 
-function hexToRgb(hex: string) {
+function hexToRgb(hex: string): string {
   const h = hex.replace("#", "");
-  const b = parseInt(h.length === 3 ? h.split("").map((c: string) => c + c).join("") : h, 16);
-  return `${(b >> 16) & 255},${(b >> 8) & 255},${b & 255}`;
+  const bigint = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
+  return `${(bigint >> 16) & 255},${(bigint >> 8) & 255},${bigint & 255}`;
 }
