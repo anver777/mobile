@@ -73,10 +73,7 @@
 
     <!-- HERO STATS -->
     <section class="wrap hero">
-      <div class="hero-greet">
-        <p class="mono muted">// SYSTEM ONLINE · <span id="today-date"></span></p>
-        <h1 class="hero-title" id="hero-greet"></h1>
-      </div>
+
       <div class="stat-grid">
         <button class="stat" data-nav="incomes" data-c="cyan">
           <div class="stat-icon">
@@ -84,6 +81,20 @@
           </div>
           <span class="stat-label mono">TOTAL // INCOME</span>
           <span class="stat-value" id="stat-income">0 ₽</span>
+        </button>
+        <button class="stat" data-nav="expenses" data-c="red">
+          <div class="stat-icon">
+            <svg viewBox="0 0 24 24"><path d="M4 7l6 6 4-4 6 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 17h6v-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <span class="stat-label mono">TOTAL // EXPENSE</span>
+          <span class="stat-value" id="stat-expense">0 ₽</span>
+        </button>
+        <button class="stat" data-nav="analytics" data-c="amber">
+          <div class="stat-icon">
+            <svg viewBox="0 0 24 24"><path d="M12 3v18M5 8l7-5 7 5M5 16l7 5 7-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <span class="stat-label mono">NET // BALANCE</span>
+          <span class="stat-value" id="stat-balance">0 ₽</span>
         </button>
         <button class="stat" data-nav="goals" data-c="magenta">
           <div class="stat-icon">
@@ -105,6 +116,7 @@
     <!-- SEGMENTED NAV (top on desktop) -->
     <nav class="wrap segmented" role="tablist" aria-label="Разделы">
       <button class="seg" data-nav="incomes" data-c="cyan" role="tab">Доходы</button>
+      <button class="seg" data-nav="expenses" data-c="red" role="tab">Расходы</button>
       <button class="seg" data-nav="goals" data-c="magenta" role="tab">Цели</button>
       <button class="seg" data-nav="notes" data-c="lime" role="tab">Заметки</button>
       <button class="seg" data-nav="analytics" data-c="amber" role="tab">Аналитика</button>
@@ -118,6 +130,10 @@
       <button class="dock-btn" data-nav="incomes" data-c="cyan">
         <svg viewBox="0 0 24 24"><path d="M4 17l6-6 4 4 6-8M14 7h6v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Доходы</span>
+      </button>
+      <button class="dock-btn" data-nav="expenses" data-c="red">
+        <svg viewBox="0 0 24 24"><path d="M4 7l6 6 4-4 6 8M14 17h6v-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Расходы</span>
       </button>
       <button class="dock-btn" data-nav="goals" data-c="magenta">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>

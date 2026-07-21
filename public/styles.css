@@ -222,10 +222,9 @@ a { color: var(--cyan); text-decoration: none; }
    HERO
    ========================================================= */
 .hero {
-  padding-top: 26px;
+  padding-top: 22px;
   padding-bottom: 10px;
 }
-.hero-greet { margin-bottom: 20px; }
 .hero-title {
   margin: 6px 0 0;
   font-family: var(--font-display);
@@ -238,8 +237,14 @@ a { color: var(--cyan); text-decoration: none; }
 /* stat cards */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (min-width: 640px) {
+  .stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+}
+@media (min-width: 960px) {
+  .stat-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 .stat {
   --neon: var(--cyan);
@@ -276,6 +281,10 @@ a { color: var(--cyan); text-decoration: none; }
 .stat:hover {
   transform: translateY(-2px);
   box-shadow: var(--neon-glow);
+}
+.stat.active {
+  box-shadow: var(--neon-glow);
+  border-color: var(--neon);
 }
 .stat-icon {
   width: 36px; height: 36px;
@@ -681,7 +690,7 @@ a { color: var(--cyan); text-decoration: none; }
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  height: 180px;
+  height: 200px;
   padding-top: 10px;
 }
 .chart-col {
@@ -703,7 +712,46 @@ a { color: var(--cyan); text-decoration: none; }
   min-height: 4px;
   transition: height 0.4s ease;
 }
-.chart-lbl { font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
+.chart-lbl { font-family: var(--font-mono); font-size: 10px; color: var(--muted); text-align: center; }
+
+/* dual bars: income vs expense */
+.chart-dual { align-items: stretch; }
+.chart-dual .chart-col { justify-content: flex-end; }
+.chart-bar-pair {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
+}
+.chart-bar-pair .chart-bar {
+  width: 45%;
+  min-height: 3px;
+}
+.chart-bar-inc {
+  background: linear-gradient(180deg, var(--lime), color-mix(in srgb, var(--lime) 20%, transparent));
+  box-shadow: 0 0 10px rgba(166, 255, 0, 0.5);
+}
+.chart-bar-exp {
+  background: linear-gradient(180deg, var(--red), color-mix(in srgb, var(--red) 20%, transparent));
+  box-shadow: 0 0 10px rgba(255, 42, 95, 0.5);
+}
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.lg-item { display: inline-flex; align-items: center; gap: 6px; }
+.lg-item i {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  display: inline-block;
+}
 
 /* =========================================================
    FORMS
@@ -829,20 +877,22 @@ input[type="number"] { -moz-appearance: textfield; }
 .dock-btn {
   --neon: var(--cyan);
   flex: 1;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-  padding: 6px 4px;
+  min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  padding: 6px 2px;
   background: transparent;
   color: var(--muted);
   border: 1px solid transparent;
   cursor: pointer;
-  font-size: 10px;
+  font-size: 9px;
   font-family: var(--font-mono);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   border-radius: var(--radius);
   transition: color 0.15s ease, background 0.15s ease;
 }
-.dock-btn svg { width: 22px; height: 22px; }
+.dock-btn svg { width: 20px; height: 20px; }
+.dock-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .dock-btn.active {
   color: var(--neon);
   background: color-mix(in srgb, var(--neon) 10%, transparent);

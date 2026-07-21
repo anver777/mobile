@@ -1,17 +1,26 @@
 /* =========================================================
    NEON//FINANCE — Vanilla JavaScript app
    Zero dependencies. Stores data in localStorage.
+   Sections: Incomes · Expenses · Goals · Notes · Analytics
    ========================================================= */
 (function () {
   "use strict";
 
   // ---------- constants ----------
-  var STORAGE_KEY = "neon-finance-v2";
+  var STORAGE_KEY = "neon-finance-v3";
   var SETTINGS_KEY = "neon-finance-settings-v2";
+
   var INCOME_CATEGORIES = ["Зарплата", "Фриланс", "Инвестиции", "Подарок", "Возврат", "Прочее"];
+  var EXPENSE_CATEGORIES = ["Продукты", "Транспорт", "Кафе", "Жильё", "Развлечения", "Здоровье", "Одежда", "Связь", "Подписки", "Прочее"];
+
   var CATEGORY_COLOR = {
+    // incomes
     "Зарплата": "cyan", "Фриланс": "lime", "Инвестиции": "magenta",
-    "Подарок": "amber", "Возврат": "violet", "Прочее": "red"
+    "Подарок": "amber", "Возврат": "violet", "Прочее": "red",
+    // expenses
+    "Продукты": "lime", "Транспорт": "cyan", "Кафе": "amber",
+    "Жильё": "violet", "Развлечения": "magenta", "Здоровье": "red",
+    "Одежда": "magenta", "Связь": "cyan", "Подписки": "amber"
   };
   var COLOR_HEX = {
     cyan: "#00f0ff", magenta: "#ff00d4", lime: "#a6ff00",
@@ -28,6 +37,7 @@
     settings: { name: "", currency: "₽" },
     filters: {
       incomeQuery: "", incomeCat: "all", incomePeriod: "all",
+      expenseQuery: "", expenseCat: "all", expensePeriod: "all",
       noteQuery: ""
     }
   };
@@ -86,6 +96,7 @@
     tag: '<svg viewBox="0 0 24 24"><path d="M20 12l-8 8-9-9V3h8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>',
     note: '<svg viewBox="0 0 24 24"><path d="M6 3h9l5 5v13H6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 3v6h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
     income: '<svg viewBox="0 0 24 24"><path d="M4 17l6-6 4 4 6-8M14 7h6v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    expense: '<svg viewBox="0 0 24 24"><path d="M4 7l6 6 4-4 6 8M14 17h6v-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     target: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>',
     search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
@@ -95,7 +106,7 @@
     hash: '<svg viewBox="0 0 24 24"><path d="M4 9h16M4 15h16M10 3l-2 18M16 3l-2 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     download: '<svg viewBox="0 0 24 24"><path d="M12 3v14m0 0l-5-5m5 5l5-5M4 21h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     upload: '<svg viewBox="0 0 24 24"><path d="M12 21V7m0 0l-5 5m5-5l5 5M4 3h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    trend: '<svg viewBox="0 0 24 24"><path d="M4 17l6-6 4 4 6-8M14 7h6v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    balance: '<svg viewBox="0 0 24 24"><path d="M12 3v18M5 8l7-5 7 5M5 16l7 5 7-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
   };
 
   // ---------- storage ----------
@@ -108,6 +119,12 @@
         { id: 1, amount: 120000, source: "Зарплата за месяц", category: "Зарплата", note: "Основная работа", date: today },
         { id: 2, amount: 35000, source: "Фриланс-проект", category: "Фриланс", note: "Лендинг для клиента", date: today },
         { id: 3, amount: 90000, source: "Прошлая зарплата", category: "Зарплата", note: "", date: prevISO }
+      ],
+      expenses: [
+        { id: 1, amount: 8500, source: "Продукты в магазине", category: "Продукты", note: "", date: today },
+        { id: 2, amount: 25000, source: "Аренда квартиры", category: "Жильё", note: "За текущий месяц", date: today },
+        { id: 3, amount: 2200, source: "Такси", category: "Транспорт", note: "", date: today },
+        { id: 4, amount: 1499, source: "Подписка на сервис", category: "Подписки", note: "", date: prevISO }
       ],
       goals: [
         { id: 1, title: "Новый ноутбук", target: 150000, current: 55000, deadline: "", color: "cyan" },
@@ -125,7 +142,22 @@
       var raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         var d = JSON.parse(raw);
-        if (d && Array.isArray(d.incomes)) return d;
+        if (d && Array.isArray(d.incomes)) {
+          if (!Array.isArray(d.expenses)) d.expenses = [];
+          if (!Array.isArray(d.goals)) d.goals = [];
+          if (!Array.isArray(d.notes)) d.notes = [];
+          return d;
+        }
+      }
+      // migrate from v2 if present
+      var oldRaw = localStorage.getItem("neon-finance-v2");
+      if (oldRaw) {
+        var od = JSON.parse(oldRaw);
+        if (od && Array.isArray(od.incomes)) {
+          od.expenses = [];
+          save(od);
+          return od;
+        }
       }
     } catch (e) {}
     var s = seed();
@@ -175,21 +207,20 @@
   function closeModal() { $("#modal").hidden = true; }
 
   // ---------- computations ----------
-  function totalIncome() {
-    return state.data.incomes.reduce(function (s, i) { return s + Number(i.amount); }, 0);
-  }
+  function totalIncome() { return state.data.incomes.reduce(function (s, i) { return s + Number(i.amount); }, 0); }
+  function totalExpense() { return state.data.expenses.reduce(function (s, i) { return s + Number(i.amount); }, 0); }
+  function balance() { return totalIncome() - totalExpense(); }
   function goalsProgress() {
     var t = state.data.goals.reduce(function (s, g) { return s + Number(g.target); }, 0);
     var c = state.data.goals.reduce(function (s, g) { return s + Number(g.current); }, 0);
     return t > 0 ? clamp((c / t) * 100, 0, 100) : 0;
   }
 
-  // ---------- filters ----------
-  function filteredIncomes() {
-    var list = state.data.incomes;
-    var q = state.filters.incomeQuery.trim().toLowerCase();
-    var cat = state.filters.incomeCat;
-    var p = state.filters.incomePeriod;
+  // ---------- filters (shared for incomes/expenses) ----------
+  function filterTx(list, opts) {
+    var q = (opts.query || "").trim().toLowerCase();
+    var cat = opts.cat;
+    var p = opts.period;
     var now = new Date();
     var ym = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
     var lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -216,95 +247,145 @@
 
   // ---------- render: header stats ----------
   function renderHeader() {
-    $("#today-date").textContent = new Date().toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
-    $("#hero-greet").textContent = state.settings.name ? "Привет, " + state.settings.name : "Привет, оператор";
-    $("#stat-income").textContent = fmtMoney(totalIncome());
-    $("#stat-goals").textContent = Math.round(goalsProgress()) + "%";
-    $("#stat-notes").textContent = String(state.data.notes.length);
+    var inc = totalIncome();
+    var exp = totalExpense();
+    var bal = inc - exp;
+    var incomeEl = $("#stat-income"); if (incomeEl) incomeEl.textContent = fmtMoney(inc);
+    var expEl = $("#stat-expense"); if (expEl) expEl.textContent = fmtMoney(exp);
+    var balEl = $("#stat-balance");
+    if (balEl) {
+      balEl.textContent = fmtMoney(bal);
+      // color-code balance
+      var card = balEl.closest(".stat");
+      if (card) card.dataset.c = bal < 0 ? "red" : "amber";
+    }
+    var goalsEl = $("#stat-goals"); if (goalsEl) goalsEl.textContent = Math.round(goalsProgress()) + "%";
+    var notesEl = $("#stat-notes"); if (notesEl) notesEl.textContent = String(state.data.notes.length);
   }
 
   function renderTabs() {
-    $$(".seg,.dock-btn").forEach(function (b) {
-      b.classList.toggle("active", b.dataset.nav === state.tab);
+    $$(".seg,.dock-btn,.stat").forEach(function (b) {
+      if (b.dataset.nav) b.classList.toggle("active", b.dataset.nav === state.tab);
     });
   }
 
-  // ---------- render: INCOMES ----------
-  function renderIncomes() {
+  // ==========================================================
+  // UNIFIED TRANSACTIONS VIEW (used for incomes + expenses)
+  // ==========================================================
+  function renderTx(kind) {
+    // kind: "incomes" or "expenses"
+    var isIncome = kind === "incomes";
     var main = $("#main");
     main.innerHTML = "";
 
+    var accent = isIncome ? "lime" : "red";
+    var listSource = isIncome ? state.data.incomes : state.data.expenses;
+    var cats = isIncome ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+    var f = state.filters;
+    var filterOpts = isIncome
+      ? { query: f.incomeQuery, cat: f.incomeCat, period: f.incomePeriod }
+      : { query: f.expenseQuery, cat: f.expenseCat, period: f.expensePeriod };
+    var setFilter = function (patch) {
+      if (isIncome) {
+        if ("query" in patch) f.incomeQuery = patch.query;
+        if ("cat" in patch) f.incomeCat = patch.cat;
+        if ("period" in patch) f.incomePeriod = patch.period;
+      } else {
+        if ("query" in patch) f.expenseQuery = patch.query;
+        if ("cat" in patch) f.expenseCat = patch.cat;
+        if ("period" in patch) f.expensePeriod = patch.period;
+      }
+      renderTx(kind);
+    };
+
+    // header
     var head = el("div", { class: "section-head" }, [
       el("div", {}, [
         el("h2", { class: "section-title" }, [
-          el("small", { text: "// TRANSACTIONS" }),
-          document.createTextNode("Доходы")
+          el("small", { text: isIncome ? "// TRANSACTIONS · INCOME" : "// TRANSACTIONS · EXPENSE" }),
+          document.createTextNode(isIncome ? "Доходы" : "Расходы")
         ])
       ]),
       (function () {
-        var b = el("button", { class: "btn solid", "data-c": "lime" }, []);
-        b.innerHTML = ICO.plus + '<span>Доход</span>';
-        b.addEventListener("click", function () { openIncomeForm(); });
+        var b = el("button", { class: "btn solid", "data-c": accent });
+        b.innerHTML = ICO.plus + '<span>' + (isIncome ? "Доход" : "Расход") + '</span>';
+        b.addEventListener("click", function () { openTxForm(kind, null); });
         return b;
       })()
     ]);
     main.appendChild(head);
 
-    // toolbar
+    // search
     var bar = el("div", { class: "toolbar" });
     var s = el("div", { class: "search" });
     s.innerHTML = ICO.search;
-    var si = el("input", { type: "text", placeholder: "Поиск по источнику или заметке…", value: state.filters.incomeQuery });
-    si.addEventListener("input", function (e) { state.filters.incomeQuery = e.target.value; renderIncomes(); si.focus(); });
+    var si = el("input", { type: "text", placeholder: "Поиск по источнику или заметке…", value: filterOpts.query });
+    si.addEventListener("input", function (e) {
+      setFilter({ query: e.target.value });
+      // restore focus after re-render
+      var again = $(".search input"); if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+    });
     s.appendChild(si);
     bar.appendChild(s);
     main.appendChild(bar);
 
+    // period chips
     var periods = [["all","Все"], ["month","Этот месяц"], ["last","Прошлый"]];
     var pr = el("div", { class: "chip-row" });
     periods.forEach(function (p) {
-      var c = el("button", { class: "chip" + (state.filters.incomePeriod === p[0] ? " active" : ""), "data-c": "cyan", text: p[1] });
-      c.addEventListener("click", function () { state.filters.incomePeriod = p[0]; renderIncomes(); });
+      var c = el("button", { class: "chip" + (filterOpts.period === p[0] ? " active" : ""), "data-c": accent, text: p[1] });
+      c.addEventListener("click", function () { setFilter({ period: p[0] }); });
       pr.appendChild(c);
     });
     main.appendChild(pr);
 
-    var presentCats = INCOME_CATEGORIES.filter(function (c) {
-      return state.data.incomes.some(function (i) { return i.category === c; });
+    // categories chips
+    var presentCats = cats.filter(function (c) {
+      return listSource.some(function (i) { return i.category === c; });
     });
     if (presentCats.length) {
       var cr = el("div", { class: "chip-row" });
-      var all = el("button", { class: "chip" + (state.filters.incomeCat === "all" ? " active" : ""), "data-c": "magenta", text: "Все категории" });
-      all.addEventListener("click", function () { state.filters.incomeCat = "all"; renderIncomes(); });
+      var all = el("button", { class: "chip" + (filterOpts.cat === "all" ? " active" : ""), "data-c": "magenta", text: "Все категории" });
+      all.addEventListener("click", function () { setFilter({ cat: "all" }); });
       cr.appendChild(all);
       presentCats.forEach(function (c) {
-        var b = el("button", { class: "chip" + (state.filters.incomeCat === c ? " active" : ""), "data-c": CATEGORY_COLOR[c] || "cyan" });
+        var b = el("button", { class: "chip" + (filterOpts.cat === c ? " active" : ""), "data-c": CATEGORY_COLOR[c] || "cyan" });
         b.innerHTML = ICO.tag + '<span>' + esc(c) + '</span>';
-        b.addEventListener("click", function () { state.filters.incomeCat = c; renderIncomes(); });
+        b.addEventListener("click", function () { setFilter({ cat: c }); });
         cr.appendChild(b);
       });
       main.appendChild(cr);
     }
 
-    var list = filteredIncomes();
+    // filtered list
+    var list = filterTx(listSource, filterOpts);
     var sum = list.reduce(function (s, i) { return s + Number(i.amount); }, 0);
     main.appendChild(el("p", { class: "mono muted", style: "margin:12px 0", text: "// Показано: " + list.length + " · сумма " + fmtMoney(sum) }));
 
     if (list.length === 0) {
-      main.appendChild(emptyState(ICO.income, state.data.incomes.length === 0 ? "Доходов пока нет" : "Ничего не найдено", state.data.incomes.length === 0 ? "Добавьте первый доход, чтобы начать." : "Измените фильтры или поиск."));
+      main.appendChild(emptyState(
+        isIncome ? ICO.income : ICO.expense,
+        listSource.length === 0
+          ? (isIncome ? "Доходов пока нет" : "Расходов пока нет")
+          : "Ничего не найдено",
+        listSource.length === 0
+          ? (isIncome ? "Добавьте первый доход, чтобы начать." : "Добавьте первый расход, чтобы отслеживать траты.")
+          : "Измените фильтры или поиск."
+      ));
       return;
     }
 
     var container = el("div", { class: "list" });
     list.forEach(function (inc) {
-      var c = CATEGORY_COLOR[inc.category] || "cyan";
+      var c = CATEGORY_COLOR[inc.category] || (isIncome ? "lime" : "red");
       var card = el("div", { class: "card", "data-c": c });
       var row = el("div", { class: "card-row" });
-      var ico = el("div", { class: "card-ico", html: ICO.income });
+      var ico = el("div", { class: "card-ico", html: isIncome ? ICO.income : ICO.expense });
       var main2 = el("div", { class: "card-main" });
+      var amountText = (isIncome ? "+ " : "− ") + fmtMoney(Number(inc.amount));
       var headR = el("div", { class: "card-head" }, [
         el("h4", { class: "card-title", text: inc.source }),
-        el("span", { class: "card-amount", text: fmtMoney(Number(inc.amount)) })
+        el("span", { class: "card-amount", text: amountText })
       ]);
       var meta = el("div", { class: "card-meta" });
       var t1 = el("span", { class: "tag", "data-c": c }); t1.innerHTML = ICO.tag + '<span>' + esc(inc.category) + '</span>'; meta.appendChild(t1);
@@ -315,13 +396,18 @@
       main2.appendChild(headR);
       main2.appendChild(meta);
       var actions = el("div", { class: "card-actions" });
+      var edit = el("button", { class: "act", title: "Редактировать" });
+      edit.innerHTML = ICO.pencil;
+      edit.addEventListener("click", function () { openTxForm(kind, inc); });
       var del = el("button", { class: "act danger", title: "Удалить", "aria-label": "Удалить" });
       del.innerHTML = ICO.trash;
       del.addEventListener("click", function () {
         if (!confirm("Удалить запись «" + inc.source + "»?")) return;
-        state.data.incomes = state.data.incomes.filter(function (x) { return x.id !== inc.id; });
-        save(state.data); render(); toast("Доход удалён", "ok");
+        if (isIncome) state.data.incomes = state.data.incomes.filter(function (x) { return x.id !== inc.id; });
+        else state.data.expenses = state.data.expenses.filter(function (x) { return x.id !== inc.id; });
+        save(state.data); render(); toast("Запись удалена", "ok");
       });
+      actions.appendChild(edit);
       actions.appendChild(del);
       row.appendChild(ico); row.appendChild(main2); row.appendChild(actions);
       card.appendChild(row);
@@ -330,15 +416,26 @@
     main.appendChild(container);
   }
 
-  function openIncomeForm() {
+  function openTxForm(kind, editing) {
+    var isIncome = kind === "incomes";
+    var accent = isIncome ? "lime" : "red";
+    var cats = isIncome ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
     var form = el("form", { class: "form" });
     form.innerHTML = ''
-      + '<div class="field"><label>Сумма (' + state.settings.currency + ')</label><input class="input" name="amount" type="number" inputmode="decimal" step="0.01" min="0" required placeholder="10000"></div>'
-      + '<div class="field"><label>Источник</label><input class="input" name="source" type="text" maxlength="60" required placeholder="Зарплата за месяц"></div>'
-      + '<div class="field"><label>Категория</label><select class="select" name="category">' + INCOME_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join("") + '</select></div>'
-      + '<div class="field"><label>Дата</label><input class="input" name="date" type="date" value="' + todayISO() + '"></div>'
-      + '<div class="field"><label>Заметка</label><textarea class="textarea" name="note" maxlength="240" placeholder="Комментарий"></textarea></div>'
-      + '<button type="submit" class="btn solid block" data-c="lime">Добавить доход</button>';
+      + '<div class="field"><label>Сумма (' + state.settings.currency + ')</label>'
+      +   '<input class="input" name="amount" type="number" inputmode="decimal" step="0.01" min="0" required placeholder="' + (isIncome ? "10000" : "1000") + '" value="' + (editing ? editing.amount : "") + '">'
+      + '</div>'
+      + '<div class="field"><label>' + (isIncome ? "Источник" : "На что потрачено") + '</label>'
+      +   '<input class="input" name="source" type="text" maxlength="60" required placeholder="' + (isIncome ? "Зарплата за месяц" : "Продукты в магазине") + '" value="' + esc(editing ? editing.source : "") + '">'
+      + '</div>'
+      + '<div class="field"><label>Категория</label>'
+      +   '<select class="select" name="category">'
+      +     cats.map(function (c) { return '<option value="' + c + '"' + (editing && editing.category === c ? " selected" : "") + '>' + c + '</option>'; }).join("")
+      +   '</select>'
+      + '</div>'
+      + '<div class="field"><label>Дата</label><input class="input" name="date" type="date" value="' + (editing ? esc(editing.date) : todayISO()) + '"></div>'
+      + '<div class="field"><label>Заметка</label><textarea class="textarea" name="note" maxlength="240" placeholder="Комментарий">' + esc(editing ? editing.note : "") + '</textarea></div>'
+      + '<button type="submit" class="btn solid block" data-c="' + accent + '">' + (editing ? "Сохранить" : (isIncome ? "Добавить доход" : "Добавить расход")) + '</button>';
     form.addEventListener("submit", function (e) {
       e.preventDefault();
       var fd = new FormData(form);
@@ -346,19 +443,24 @@
       var source = String(fd.get("source") || "").trim();
       if (!isFinite(amount) || amount <= 0) return toast("Сумма должна быть > 0", "err");
       if (!source) return toast("Укажите источник", "err");
-      state.data.incomes.unshift({
-        id: nextId(state.data.incomes),
+      var payload = {
         amount: amount, source: source,
         category: String(fd.get("category") || "Прочее"),
         note: String(fd.get("note") || "").trim(),
         date: String(fd.get("date") || todayISO())
-      });
+      };
+      var arr = isIncome ? state.data.incomes : state.data.expenses;
+      if (editing) {
+        Object.assign(editing, payload);
+      } else {
+        arr.unshift(Object.assign({ id: nextId(arr) }, payload));
+      }
       save(state.data);
       closeModal();
       render();
-      toast("Доход добавлен", "ok");
+      toast(editing ? "Запись обновлена" : (isIncome ? "Доход добавлен" : "Расход добавлен"), "ok");
     });
-    openModal("НОВЫЙ ДОХОД", form, "lime");
+    openModal(editing ? (isIncome ? "РЕДАКТИРОВАТЬ ДОХОД" : "РЕДАКТИРОВАТЬ РАСХОД") : (isIncome ? "НОВЫЙ ДОХОД" : "НОВЫЙ РАСХОД"), form, accent);
   }
 
   // ---------- render: GOALS ----------
@@ -525,7 +627,11 @@
     var s = el("div", { class: "search" });
     s.innerHTML = ICO.search;
     var si = el("input", { type: "text", placeholder: "Поиск по заметкам…", value: state.filters.noteQuery });
-    si.addEventListener("input", function (e) { state.filters.noteQuery = e.target.value; renderNotes(); si.focus(); });
+    si.addEventListener("input", function (e) {
+      state.filters.noteQuery = e.target.value;
+      renderNotes();
+      var again = $(".search input"); if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+    });
     s.appendChild(si);
     bar.appendChild(s);
     main.appendChild(bar);
@@ -600,45 +706,63 @@
     main.appendChild(el("div", { class: "section-head" }, [
       el("h2", { class: "section-title" }, [
         el("small", { text: "// DATA STREAM" }),
-        document.createTextNode("Аналитика доходов")
+        document.createTextNode("Аналитика")
       ])
     ]));
 
     var inc = state.data.incomes;
-    var total = inc.reduce(function (s, i) { return s + Number(i.amount); }, 0);
-    var monthsSet = {};
-    inc.forEach(function (i) { monthsSet[String(i.date).slice(0, 7)] = true; });
-    var monthsCount = Object.keys(monthsSet).length || 1;
-    var avg = total / monthsCount;
+    var exp = state.data.expenses;
+    var incTotal = totalIncome();
+    var expTotal = totalExpense();
+    var net = incTotal - expTotal;
+    var savingsRate = incTotal > 0 ? Math.round(((incTotal - expTotal) / incTotal) * 100) : 0;
 
-    // per-month series
-    var mmap = {};
-    inc.forEach(function (i) {
-      var k = String(i.date).slice(0, 7);
-      mmap[k] = (mmap[k] || 0) + Number(i.amount);
-    });
-    var series = Object.keys(mmap).sort().map(function (k) {
+    // months
+    var mmapI = {}, mmapE = {};
+    inc.forEach(function (i) { var k = String(i.date).slice(0, 7); mmapI[k] = (mmapI[k] || 0) + Number(i.amount); });
+    exp.forEach(function (i) { var k = String(i.date).slice(0, 7); mmapE[k] = (mmapE[k] || 0) + Number(i.amount); });
+    var allMonths = {};
+    Object.keys(mmapI).forEach(function (k) { allMonths[k] = true; });
+    Object.keys(mmapE).forEach(function (k) { allMonths[k] = true; });
+    var series = Object.keys(allMonths).sort().map(function (k) {
       var parts = k.split("-");
-      return { key: k, label: MONTHS_RU[Number(parts[1]) - 1] + " " + parts[0].slice(2), total: mmap[k] };
+      return {
+        key: k,
+        label: MONTHS_RU[Number(parts[1]) - 1] + " " + parts[0].slice(2),
+        income: mmapI[k] || 0,
+        expense: mmapE[k] || 0
+      };
     });
-    var best = series.reduce(function (b, p) { return p.total > b.total ? p : b; }, { label: "—", total: 0 });
-    var maxMonth = series.reduce(function (m, p) { return Math.max(m, p.total); }, 1);
+    var maxMonth = series.reduce(function (m, p) { return Math.max(m, p.income, p.expense); }, 1);
 
-    // category breakdown
-    var cmap = {};
-    inc.forEach(function (i) { cmap[i.category] = (cmap[i.category] || 0) + Number(i.amount); });
-    var totalCat = Object.keys(cmap).reduce(function (s, k) { return s + cmap[k]; }, 0) || 1;
-    var breakdown = Object.keys(cmap).map(function (k) {
-      return { category: k, total: cmap[k], pct: Math.round((cmap[k] / totalCat) * 100), color: COLOR_HEX[CATEGORY_COLOR[k] || "cyan"] };
+    // best month by income
+    var best = series.reduce(function (b, p) { return p.income > b.income ? p : b; }, { label: "—", income: 0 });
+
+    // expense category breakdown
+    var ecmap = {};
+    exp.forEach(function (i) { ecmap[i.category] = (ecmap[i.category] || 0) + Number(i.amount); });
+    var totalE = Object.keys(ecmap).reduce(function (s, k) { return s + ecmap[k]; }, 0) || 1;
+    var expBreakdown = Object.keys(ecmap).map(function (k) {
+      return { category: k, total: ecmap[k], pct: Math.round((ecmap[k] / totalE) * 100), color: COLOR_HEX[CATEGORY_COLOR[k] || "red"] };
+    }).sort(function (a, b) { return b.total - a.total; });
+
+    // income category breakdown
+    var icmap = {};
+    inc.forEach(function (i) { icmap[i.category] = (icmap[i.category] || 0) + Number(i.amount); });
+    var totalI = Object.keys(icmap).reduce(function (s, k) { return s + icmap[k]; }, 0) || 1;
+    var incBreakdown = Object.keys(icmap).map(function (k) {
+      return { category: k, total: icmap[k], pct: Math.round((icmap[k] / totalI) * 100), color: COLOR_HEX[CATEGORY_COLOR[k] || "cyan"] };
     }).sort(function (a, b) { return b.total - a.total; });
 
     // mini cards
     var mini = el("div", { class: "mini-grid" });
     [
-      { c: "lime", ico: ICO.trend, lbl: "// TOTAL", val: fmtMoney(total) },
-      { c: "cyan", ico: ICO.chart, lbl: "// AVG / MONTH", val: fmtMoney(avg) },
-      { c: "magenta", ico: ICO.star, lbl: "// BEST MONTH", val: best.label, sub: fmtMoney(best.total) },
-      { c: "amber", ico: ICO.hash, lbl: "// ENTRIES", val: String(inc.length) }
+      { c: "lime", ico: ICO.income, lbl: "// TOTAL INCOME", val: fmtMoney(incTotal) },
+      { c: "red", ico: ICO.expense, lbl: "// TOTAL EXPENSE", val: fmtMoney(expTotal) },
+      { c: net < 0 ? "red" : "amber", ico: ICO.balance, lbl: "// NET BALANCE", val: fmtMoney(net) },
+      { c: "cyan", ico: ICO.chart, lbl: "// SAVINGS RATE", val: savingsRate + "%", sub: "От доходов" },
+      { c: "magenta", ico: ICO.star, lbl: "// BEST MONTH", val: best.label, sub: fmtMoney(best.income) },
+      { c: "violet", ico: ICO.hash, lbl: "// ENTRIES", val: String(inc.length + exp.length), sub: "доходов + расходов" }
     ].forEach(function (m) {
       var d = el("div", { class: "mini", "data-c": m.c });
       d.innerHTML = '<div class="mini-ico">' + m.ico + '</div>'
@@ -649,13 +773,13 @@
     });
     main.appendChild(mini);
 
-    // breakdown panel
-    var p1 = el("div", { class: "panel", "data-c": "cyan" });
-    p1.innerHTML = '<h3>' + ICO.pie + '<span>Распределение по категориям</span></h3>';
-    if (breakdown.length === 0) {
-      p1.appendChild(el("p", { class: "muted", text: "Нет данных о доходах." }));
+    // expense breakdown panel
+    var p1 = el("div", { class: "panel", "data-c": "red" });
+    p1.innerHTML = '<h3>' + ICO.pie + '<span>Расходы по категориям</span></h3>';
+    if (expBreakdown.length === 0) {
+      p1.appendChild(el("p", { class: "muted", text: "Нет данных о расходах." }));
     } else {
-      breakdown.forEach(function (b) {
+      expBreakdown.forEach(function (b) {
         var row = el("div", { class: "bar-row" });
         row.innerHTML = '<div class="bar-label"><span>' + esc(b.category) + '</span><span>' + esc(fmtMoney(b.total)) + ' · ' + b.pct + '%</span></div>'
           + '<div class="progress"><span style="width:' + b.pct + '%;background:linear-gradient(90deg, ' + b.color + '55, ' + b.color + ');box-shadow:0 0 12px ' + b.color + '"></span></div>';
@@ -664,17 +788,37 @@
     }
     main.appendChild(p1);
 
-    // monthly chart
-    var p2 = el("div", { class: "panel", "data-c": "magenta" });
-    p2.innerHTML = '<h3>' + ICO.chart + '<span>Динамика по месяцам</span></h3>';
-    if (series.length === 0) {
-      p2.appendChild(el("p", { class: "muted", text: "Нет данных о доходах." }));
+    // income breakdown panel
+    var p1b = el("div", { class: "panel", "data-c": "lime" });
+    p1b.innerHTML = '<h3>' + ICO.pie + '<span>Доходы по категориям</span></h3>';
+    if (incBreakdown.length === 0) {
+      p1b.appendChild(el("p", { class: "muted", text: "Нет данных о доходах." }));
     } else {
-      var chart = el("div", { class: "chart" });
+      incBreakdown.forEach(function (b) {
+        var row = el("div", { class: "bar-row" });
+        row.innerHTML = '<div class="bar-label"><span>' + esc(b.category) + '</span><span>' + esc(fmtMoney(b.total)) + ' · ' + b.pct + '%</span></div>'
+          + '<div class="progress"><span style="width:' + b.pct + '%;background:linear-gradient(90deg, ' + b.color + '55, ' + b.color + ');box-shadow:0 0 12px ' + b.color + '"></span></div>';
+        p1b.appendChild(row);
+      });
+    }
+    main.appendChild(p1b);
+
+    // monthly chart with income + expense side by side
+    var p2 = el("div", { class: "panel", "data-c": "magenta" });
+    p2.innerHTML = '<h3>' + ICO.chart + '<span>Доход vs Расход по месяцам</span></h3>'
+      + '<div class="chart-legend"><span class="lg-item"><i style="background:var(--lime);box-shadow:0 0 8px var(--lime)"></i>Доход</span>'
+      + '<span class="lg-item"><i style="background:var(--red);box-shadow:0 0 8px var(--red)"></i>Расход</span></div>';
+    if (series.length === 0) {
+      p2.appendChild(el("p", { class: "muted", text: "Нет данных." }));
+    } else {
+      var chart = el("div", { class: "chart chart-dual" });
       series.forEach(function (s) {
         var col = el("div", { class: "chart-col" });
-        col.innerHTML = '<span class="chart-val">' + esc(fmtMoney(s.total)) + '</span>'
-          + '<div class="chart-bar" style="height:' + ((s.total / maxMonth) * 100) + '%" title="' + esc(s.label + ": " + fmtMoney(s.total)) + '"></div>'
+        col.innerHTML = ''
+          + '<div class="chart-bar-pair">'
+          +   '<div class="chart-bar chart-bar-inc" style="height:' + ((s.income / maxMonth) * 100) + '%" title="' + esc("Доход: " + fmtMoney(s.income)) + '"></div>'
+          +   '<div class="chart-bar chart-bar-exp" style="height:' + ((s.expense / maxMonth) * 100) + '%" title="' + esc("Расход: " + fmtMoney(s.expense)) + '"></div>'
+          + '</div>'
           + '<span class="chart-lbl">' + esc(s.label) + '</span>';
         chart.appendChild(col);
       });
@@ -729,14 +873,14 @@
       cur.appendChild(b);
     });
     $("#s-name", form).addEventListener("input", function (e) {
-      state.settings.name = e.target.value; saveSettings(); renderHeader();
+      state.settings.name = e.target.value; saveSettings();
     });
     $("#s-export", form).addEventListener("click", function (e) { e.preventDefault(); doExport(); });
     $("#s-import", form).addEventListener("click", function (e) { e.preventDefault(); $("#import-file").click(); });
     $("#s-reset", form).addEventListener("click", function (e) {
       e.preventDefault();
       if (!confirm("Удалить ВСЕ данные? Это необратимо.")) return;
-      state.data = { incomes: [], goals: [], notes: [] };
+      state.data = { incomes: [], expenses: [], goals: [], notes: [] };
       save(state.data); closeModal(); render(); toast("Все данные удалены", "ok");
     });
     openModal("НАСТРОЙКИ", form, "cyan");
@@ -744,7 +888,7 @@
 
   // ---------- IMPORT/EXPORT ----------
   function doExport() {
-    var payload = Object.assign({ app: "neon-finance", version: 2, exportedAt: nowISO() }, state.data);
+    var payload = Object.assign({ app: "neon-finance", version: 3, exportedAt: nowISO() }, state.data);
     var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");
@@ -761,9 +905,11 @@
         if (!d || !Array.isArray(d.incomes)) throw new Error("Неверный файл");
         if (!confirm("Импортировать данные? Они будут добавлены к существующим.")) return;
         var baseI = state.data.incomes.reduce(function (m, x) { return Math.max(m, x.id || 0); }, 0);
+        var baseE = state.data.expenses.reduce(function (m, x) { return Math.max(m, x.id || 0); }, 0);
         var baseG = state.data.goals.reduce(function (m, x) { return Math.max(m, x.id || 0); }, 0);
         var baseN = state.data.notes.reduce(function (m, x) { return Math.max(m, x.id || 0); }, 0);
         (d.incomes || []).forEach(function (x) { state.data.incomes.unshift(Object.assign({}, x, { id: ++baseI })); });
+        (d.expenses || []).forEach(function (x) { state.data.expenses.unshift(Object.assign({}, x, { id: ++baseE })); });
         (d.goals || []).forEach(function (x) { state.data.goals.unshift(Object.assign({}, x, { id: ++baseG })); });
         (d.notes || []).forEach(function (x) { state.data.notes.unshift(Object.assign({}, x, { id: ++baseN, createdAt: x.createdAt || nowISO() })); });
         save(state.data); closeModal(); render(); toast("Импорт завершён", "ok");
@@ -776,7 +922,8 @@
   function render() {
     renderHeader();
     renderTabs();
-    if (state.tab === "incomes") renderIncomes();
+    if (state.tab === "incomes") renderTx("incomes");
+    else if (state.tab === "expenses") renderTx("expenses");
     else if (state.tab === "goals") renderGoals();
     else if (state.tab === "notes") renderNotes();
     else if (state.tab === "analytics") renderAnalytics();
