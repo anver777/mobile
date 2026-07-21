@@ -1,87 +1,63 @@
-import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { goals } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
-type Params = { params: Promise<{ id: string }> };
-
-// PATCH /api/goals/:id  -> toggle/edit a goal
-export async function PATCH(request: NextRequest, { params }: Params) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const idNum = Number(id);
-    if (Number.isNaN(idNum)) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    const numId = Number(id);
+    if (!Number.isInteger(numId)) {
+      return Response.json({ error: "Неверный ID" }, { status: 400 });
     }
-
-    const body = await request.json();
-    const updates: Record<string, unknown> = {};
-    if (typeof body.title === "string") {
-      const t = body.title.trim();
-      if (!t) {
-        return NextResponse.json(
-          { error: "Title cannot be empty" },
-          { status: 400 }
-        );
+    const body = await req.json();
+    const update: Record<string, unknown> = {};
+    if (body.title !== undefined) update.title = String(body.title).trim();
+    if (body.targetAmount !== undefined) update.targetAmount = String(Number(body.targetAmount));
+    if (body.currentAmount !== undefined) update.currentAmount = String(Number(body.currentAmount));
+    if (body.deadline !== undefined) update.deadline = body.deadline ? String(body.deadline) : null;
+    if (body.color !== undefined) update.color = String(body.color);
+    if (body.addAmount !== undefined) {
+      const add = Number(body.addAmount);
+      if (Number.isFinite(add) && add > 0) {
+        const [current] = await db.select().from(goals).where(eq(goals.id, numId));
+        if (!current) return Response.json({ error: "Цель не найдена" }, { status: 404 });
+        const next = Number(current.currentAmount) + add;
+        update.currentAmount = String(next);
       }
-      updates.title = t;
     }
-    if (typeof body.completed === "boolean") updates.completed = body.completed;
-    if (typeof body.emoji === "string" && body.emoji.trim())
-      updates.emoji = body.emoji.trim();
-    if (typeof body.notes === "string")
-      updates.notes = body.notes.trim() || null;
-
-    if (Object.keys(updates).length === 0) {
-      return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+    if (body.subtractAmount !== undefined) {
+      const sub = Number(body.subtractAmount);
+      if (Number.isFinite(sub) && sub > 0) {
+        const [current] = await db.select().from(goals).where(eq(goals.id, numId));
+        if (!current) return Response.json({ error: "Цель не найдена" }, { status: 404 });
+        const next = Math.max(0, Number(current.currentAmount) - sub);
+        update.currentAmount = String(next);
+      }
     }
-
-    updates.updatedAt = new Date();
-
-    const [updated] = await db
-      .update(goals)
-      .set(updates)
-      .where(eq(goals.id, idNum))
-      .returning();
-
-    if (!updated) {
-      return NextResponse.json({ error: "Goal not found" }, { status: 404 });
+    if (Object.keys(update).length === 0) {
+      return Response.json({ error: "Нет данных для обновления" }, { status: 400 });
     }
-    return NextResponse.json(updated);
+    const [row] = await db.update(goals).set(update).where(eq(goals.id, numId)).returning();
+    return Response.json({ goal: row });
   } catch (error) {
-    console.error("Failed to update goal:", error);
-    return NextResponse.json(
-      { error: "Failed to update goal" },
-      { status: 500 }
-    );
+    console.error("PATCH /api/goals/[id] error", error);
+    return Response.json({ error: "Не удалось обновить цель" }, { status: 500 });
   }
 }
 
-// DELETE /api/goals/:id
-export async function DELETE(_request: NextRequest, { params }: Params) {
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const idNum = Number(id);
-    if (Number.isNaN(idNum)) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    const numId = Number(id);
+    if (!Number.isInteger(numId)) {
+      return Response.json({ error: "Неверный ID" }, { status: 400 });
     }
-
-    const [deleted] = await db
-      .delete(goals)
-      .where(eq(goals.id, idNum))
-      .returning();
-
-    if (!deleted) {
-      return NextResponse.json({ error: "Goal not found" }, { status: 404 });
-    }
-    return NextResponse.json({ ok: true, id: deleted.id });
+    await db.delete(goals).where(eq(goals.id, numId));
+    return Response.json({ ok: true });
   } catch (error) {
-    console.error("Failed to delete goal:", error);
-    return NextResponse.json(
-      { error: "Failed to delete goal" },
-      { status: 500 }
-    );
+    console.error("DELETE /api/goals/[id] error", error);
+    return Response.json({ error: "Не удалось удалить цель" }, { status: 500 });
   }
 }

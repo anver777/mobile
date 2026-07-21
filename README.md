@@ -1,156 +1,113 @@
-# 🌟 LifeOS — Personal Productivity Dashboard
+# NEON FINANCE — трекер доходов, целей и заметок
 
-Полнофункциональный неоновый трекер целей, финансов и заметок с PostgreSQL.
+Профессиональный неоновый веб-сайт для учёта личных финансов. Всё хранится в базе
+данных PostgreSQL, интерфейс полностью на русском языке, адаптирован под смартфон
+и построен вокруг светящихся (неоновых) элементов и иконок.
 
-![Neon UI](https://img.shields.io/badge/UI-Neon%20Dark-ff2d6f)
-![Next.js](https://img.shields.io/badge/Next.js-16-black)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Drizzle-336791)
-![TypeScript](https://img.shields.io/badge/TypeScript-✓-3178c6)
+## Возможности
 
-## ✨ Возможности
+- **Доходы** — добавление поступлений с суммой, источником, категорией, датой и
+  заметкой. Автоматический подсчёт общей суммы.
+- **Цели** — финансовые цели с прогресс-баром, сроком и цветом. Кнопка «Пополнить»
+  увеличивает накопленную сумму. Отмечаются достигнутые цели.
+- **Заметки** — заметки с заголовком, текстом и неоновым цветом, редактирование
+  и удаление.
+- **Дизайн** — тёмная неоновая тема, стеклянные карточки, свечение, анимации,
+  иконки в неоновом стиле (lucide).
+- **Мобильность** — нижняя навигация, модальные окна-листы снизу экрана,
+  адаптивная сетка, поддержка safe-area (чёлка/жесты).
 
-### 🎯 Цели
-- Постановка целей на день / неделю / месяц / год
-- Отметка выполнения с анимацией
-- Круговой индикатор прогресса
-- Статистика по каждому периоду
+## Стек
 
-### 💰 Финансы
-- Учёт доходов и расходов
-- 13 предустановленных категорий (еда, транспорт, зарплата и др.)
-- Фильтрация по периодам: день / неделя / месяц / год / всё время
-- Автоматическая разбивка по категориям с цветными индикаторами
-- Баланс, доходы, расходы в реальном времени
+- **Next.js 16** (App Router) + **React 19** + **TypeScript**
+- **Drizzle ORM** + **PostgreSQL**
+- **Tailwind CSS v4**
+- Иконки: **lucide-react**
 
-### 📝 Заметки
-- Создание заметок с 6 цветовыми темами
-- Закрепление важных заметок
-- Поиск по всем заметкам
-- Компактное отображение в виде карточек
-
-### 📊 Дашборд
-- Общая статистика по всем разделам
-- Баланс и баланс за текущий месяц
-- Быстрые действия
-- Превью последних заметок
-
-## 🚀 Локальный запуск
+## Локальный запуск
 
 ```bash
-# Установка зависимостей
 npm install
-
-# Создание базы данных (PostgreSQL)
-# Настройте DATABASE_URL в .env
-createdb lifeos
-# Или используйте любой PostgreSQL-хостинг (Neon, Railway, Supabase)
-
-# Применение схемы БД
-npx drizzle-kit push
-
-# Загрузка примеров данных (опционально)
-psql postgresql://postgres:postgres@127.0.0.1:5432/lifeos < seed.sql
-
-# Запуск dev-сервера
+# создайте .env с переменной DATABASE_URL (пример в шаблоне уже есть)
+npx drizzle-kit push   # применить схему к базе
 npm run dev
 ```
 
-Откройте http://localhost:3000 🚀
+## Деплой на Netlify
 
-## 🌐 Деплой на Netlify
+1. Скачайте проект и закиньте в репозиторий (например, на GitHub).
+2. В Netlify выберите «Import from Git» и укажите этот репозиторий.
+   Конфиг в `netlify.toml` уже настроен под Next.js.
+3. Установите зависимость для плагина (если ещё не установлена):
 
-### 1. Подготовьте PostgreSQL
+   ```bash
+   npm install -D @netlify/plugin-nextjs
+   ```
 
-Вам нужна внешняя PostgreSQL база (Netlify не предоставляет свою). Бесплатные варианты:
-- **[Neon.tech](https://neon.tech)** — 0.5 ГБ бесплатно, Postgres 15
-- **[Supabase](https://supabase.com)** — 500 МБ бесплатно
-- **[Railway](https://railway.app)** — пробный период с $5
+4. **Обязательно задайте переменную окружения `DATABASE_URL`** в настройках
+   Netlify (Site settings → Environment variables). Используйте хостинг
+   PostgreSQL, например **Neon**, **Supabase** или **Railway**, и вставьте
+   строку подключения вида:
+   `postgresql://user:password@host:5432/dbname`
+5. После первого деплоя примените схему к production-базе:
 
-Создайте базу, скопируйте строку подключения вида:
-```
-postgresql://user:password@host:5432/dbname
-```
+   ```bash
+   npx drizzle-kit push
+   ```
 
-### 2. Примените схему БД
+> Важно: приложение использует серверную базу данных, поэтому нужен внешний
+> PostgreSQL (бесплатный тариф Neon подойдёт идеально). Без `DATABASE_URL`
+> сайт не сможет сохранять данные.
 
-Локально или через любую shell-среду:
+## Вторая версия: React + Vite (статическая)
+
+В папке `vite-app/` лежит полностью независимая версия того же приложения на
+**React + Vite**. Она идентична по функциям и дизайну, но хранит данные
+локально в браузере через `localStorage` (без сервера и базы данных). Это
+идеально для статического хостинга и быстрого деплоя.
+
+Запуск локально:
+
 ```bash
-DATABASE_URL="postgresql://..." npx drizzle-kit push
+cd vite-app
+npm install
+npm run dev
 ```
 
-### 3. Деплой на Netlify
+Сборка и деплой на Netlify / любой статический хостинг:
 
 ```bash
-# Установите Netlify CLI
-npm install -g netlify-cli
-
-# Залейте код на GitHub
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/YOUR_USERNAME/lifeos.git
-git push -u origin main
-
-# В Netlify: создайте новый сайт из Git
-# Добавьте переменную окружения DATABASE_URL
-# Настройте Build command: npm run build
-# Publish directory: .next
-# Netlify автоматически использует netlify.toml
+cd vite-app
+npm install
+npm run build      # результат в vite-app/dist
 ```
 
-### 4. Переменные окружения в Netlify
+В панели Netlify укажите:
+- Build command: `npm run build` (выполнять в папке `vite-app`)
+- Publish directory: `dist`
 
-В Settings → Environment Variables добавьте:
-```
-DATABASE_URL=postgresql://user:pass@host:5432/dbname
-```
+Либо просто перетащите папку `vite-app/dist` в Netlify Drop. Данные останутся
+только в браузере пользователя (экспорт/импорт JSON доступен в настройках).
 
-Готово! 🎉
-
-## 🛠️ Технологии
-
-- **Next.js 16** (App Router)
-- **TypeScript** — строгая типизация
-- **PostgreSQL** + **Drizzle ORM** — индексы для быстрого поиска
-- **Tailwind CSS 4** — стили
-- **Netlify** — деплой (с плагинами для Next.js)
-
-## 📦 Структура
+## Структура
 
 ```
-src/
-├── app/
-│   ├── api/           # API endpoints
-│   │   ├── dashboard/
-│   │   ├── goals/
-│   │   ├── finance/
-│   │   └── notes/
-│   ├── page.tsx       # Главная страница (AppShell)
-│   └── layout.tsx
-├── components/        # React компоненты
-│   ├── AppShell.tsx
-│   ├── Dashboard.tsx
-│   ├── GoalsSection.tsx
-│   ├── FinanceSection.tsx
-│   ├── NotesSection.tsx
-│   └── ...
-├── db/
-│   └── schema.ts      # Drizzle схема БД
-└── lib/
-    ├── timeframes.ts  # Периоды (день/неделя/месяц/год)
-    └── utils.ts       # Утилиты
+src/                 # Next.js версия (база данных PostgreSQL)
+  app/
+    api/             — CRUD API для incomes / goals / notes + health-check
+    page.tsx         — главный экран (табы, статистика, навигация)
+    layout.tsx       — шрифты и метаданные
+    globals.css      — неоновая тема и анимации
+  components/        — IncomesView, GoalsView, NotesView, AnalyticsView, ui
+  db/                — подключение к БД и схема (Drizzle)
+  lib/               — типы, форматтеры, клиент API, аналитика
+
+vite-app/            # React + Vite версия (localStorage, статическая)
+  index.html
+  vite.config.js
+  src/
+    App.jsx          — весь UI (табы, модалки, фильтры, аналитика)
+    db.js            — хранение в localStorage + импорт/экспорт
+    analytics.js     — расчёты и форматтеры
+    styles.css       — неоновая тема
 ```
-
-## 🔐 Безопасность
-
-- API-ключи и `DATABASE_URL` хранятся в переменных окружения (не в коде)
-- `.env` добавлен в `.gitignore`
-- Для production используйте сильные пароли БД
-
-## 📄 Лицензия
-
-MIT — используйте свободно.
-
----
-
-Сделано с ❤️ для продуктивной жизни

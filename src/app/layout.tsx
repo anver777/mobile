@@ -3,37 +3,31 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "LifeOS — Цели, Финансы, Заметки",
+  title: "NEON FINANCE — Доходы, Цели, Заметки",
   description:
-    "Всё в одном месте: цели, доходы и расходы, заметки. Полная личная аналитика для продуктивной жизни.",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "LifeOS",
-  },
-  formatDetection: {
-    telephone: false,
-  },
+    "Профессиональный неоновый трекер доходов, финансовых целей и заметок. Данные сохраняются в базе, удобно на смартфоне.",
 };
 
 export const viewport: Viewport = {
+  themeColor: "#05060f",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  viewportFit: "cover",
-  themeColor: "#05050f",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ru">
       <head>
-        <meta name="mobile-web-app-capable" content="yes" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800&family=Rajdhani:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
       </head>
-      <body className="bg-[#05050f] text-slate-100 antialiased">
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

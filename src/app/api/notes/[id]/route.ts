@@ -1,68 +1,44 @@
-import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { notes } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
-type Params = { params: Promise<{ id: string }> };
-
-// PATCH /api/notes/:id
-export async function PATCH(request: NextRequest, { params }: Params) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const idNum = Number(id);
-    if (Number.isNaN(idNum)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
-
-    const body = await request.json();
-    const updates: Record<string, unknown> = {};
-    if (typeof body.title === "string") {
-      const t = body.title.trim();
-      if (!t) return NextResponse.json({ error: "Title cannot be empty" }, { status: 400 });
-      updates.title = t;
+    const numId = Number(id);
+    if (!Number.isInteger(numId)) {
+      return Response.json({ error: "Неверный ID" }, { status: 400 });
     }
-    if (typeof body.content === "string") {
-      const c = body.content.trim();
-      if (!c) return NextResponse.json({ error: "Content cannot be empty" }, { status: 400 });
-      updates.content = c;
+    const body = await req.json();
+    const update: Record<string, unknown> = {};
+    if (body.title !== undefined) update.title = String(body.title).trim();
+    if (body.content !== undefined) update.content = String(body.content);
+    if (body.color !== undefined) update.color = String(body.color);
+    if (body.pinned !== undefined) update.pinned = body.pinned ? 1 : 0;
+    if (Object.keys(update).length === 0) {
+      return Response.json({ error: "Нет данных для обновления" }, { status: 400 });
     }
-    if (typeof body.color === "string") updates.color = body.color;
-    if (typeof body.pinned === "boolean") updates.pinned = body.pinned;
-
-    if (Object.keys(updates).length === 0) {
-      return NextResponse.json({ error: "No fields to update" }, { status: 400 });
-    }
-    updates.updatedAt = new Date();
-
-    const [updated] = await db
-      .update(notes)
-      .set(updates)
-      .where(eq(notes.id, idNum))
-      .returning();
-
-    if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    return NextResponse.json(updated);
+    const [row] = await db.update(notes).set(update).where(eq(notes.id, numId)).returning();
+    return Response.json({ note: row });
   } catch (error) {
-    console.error("Failed to update note:", error);
-    return NextResponse.json({ error: "Failed to update note" }, { status: 500 });
+    console.error("PATCH /api/notes/[id] error", error);
+    return Response.json({ error: "Не удалось обновить заметку" }, { status: 500 });
   }
 }
 
-// DELETE /api/notes/:id
-export async function DELETE(_request: NextRequest, { params }: Params) {
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const idNum = Number(id);
-    if (Number.isNaN(idNum)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
-
-    const [deleted] = await db
-      .delete(notes)
-      .where(eq(notes.id, idNum))
-      .returning();
-    if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    return NextResponse.json({ ok: true, id: deleted.id });
+    const numId = Number(id);
+    if (!Number.isInteger(numId)) {
+      return Response.json({ error: "Неверный ID" }, { status: 400 });
+    }
+    await db.delete(notes).where(eq(notes.id, numId));
+    return Response.json({ ok: true });
   } catch (error) {
-    console.error("Failed to delete note:", error);
-    return NextResponse.json({ error: "Failed to delete note" }, { status: 500 });
+    console.error("DELETE /api/notes/[id] error", error);
+    return Response.json({ error: "Не удалось удалить заметку" }, { status: 500 });
   }
 }
